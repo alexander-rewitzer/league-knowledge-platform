@@ -238,7 +238,7 @@ class SQLiteRunRepository:
         objects = {row["name"]: (row["type"], " ".join(row["sql"].split()))
                    for row in connection.execute(
                        "SELECT name,type,sql FROM sqlite_master WHERE type IN ('table','trigger','index','view') "
-                       "AND name NOT LIKE 'sqlite_%'")}
+                       "AND name NOT GLOB 'sqlite_*'")}
         tables = _V1_TABLES if legacy else _TABLES
         expected = {name: ("table", " ".join(sql.split())) for name, sql in tables.items()}
         expected.update({name: ("trigger", " ".join(sql.split()))
@@ -270,7 +270,7 @@ class SQLiteRunRepository:
                 with self._connection("rwc") as connection:
                     connection.execute("BEGIN IMMEDIATE")
                     present = connection.execute(
-                        "SELECT 1 FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' LIMIT 1"
+                        "SELECT 1 FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' LIMIT 1"
                     ).fetchone()
                     if present is None:
                         for sql in (*_TABLES.values(), *_TRIGGERS.values()):

@@ -254,3 +254,50 @@ class RunMigrationTests(unittest.TestCase):
                         ).fetchone())
                     if view in additions:
                         self.assertEqual(connection.execute("SELECT count(*) FROM custom_target_view").fetchone()[0], 3)
+
+    def test_similar_internal_prefix_objects_are_rejected_in_both_schema_versions(self):
+        definitions = (
+            ("table", "CREATE TABLE {name} (value TEXT)"),
+            ("trigger", "CREATE TRIGGER {name} BEFORE UPDATE ON acquisition_run_targets BEGIN SELECT 1; END"),
+            ("index", "CREATE INDEX {name} ON acquisition_run_targets(status)"),
+            ("view", "CREATE VIEW {name} AS SELECT champion_id FROM acquisition_run_targets"),
+        )
+        for version in (1, 2):
+            for prefix in ("sqliteCustom", "SQLiteCustom"):
+                for kind, definition in definitions:
+                    with self.subTest(version=version, prefix=prefix, kind=kind), TemporaryDirectory() as directory:
+                        path = Path(directory) / "runs.sqlite3"
+                        backup = Path(directory) / "backup.sqlite3"
+                        if version == 1:
+                            legacy_database(path, self.catalog)
+                        else:
+                            initialize_run_repository(path)
+                        name = prefix + kind.title()
+                        with closing(sqlite3.connect(path)) as connection, connection:
+                            connection.execute(definition.format(name=name))
+                        before = path.read_bytes()
+                        with self.assertRaisesRegex(RunStateError, "schema"):
+                            if version == 1:
+                                migrate_run_repository_v1_to_v2(path, backup_path=backup)
+                            else:
+                                SQLiteRunRepository(path).initialize()
+                        self.assertEqual(path.read_bytes(), before)
+                        self.assertEqual(self.version(path), version)
+                        self.assertFalse(backup.exists())
+                        with closing(sqlite3.connect(path)) as connection:
+                            self.assertIsNotNone(connection.execute(
+                                "SELECT 1 FROM sqlite_master WHERE name=? AND type=?", (name, kind)
+                            ).fetchone())
+
+    def test_initialization_does_not_adopt_a_database_with_similar_prefix_table(self):
+        path = self.root / "custom.sqlite3"
+        with closing(sqlite3.connect(path)) as connection, connection:
+            connection.execute("CREATE TABLE sqliteCustomData (value TEXT)")
+            connection.execute("INSERT INTO sqliteCustomData VALUES ('preserve')")
+        before = path.read_bytes()
+        with self.assertRaisesRegex(RunStateError, "schema"):
+            initialize_run_repository(path)
+        self.assertEqual(path.read_bytes(), before)
+        with closing(sqlite3.connect(path)) as connection:
+            self.assertEqual(connection.execute("SELECT value FROM sqliteCustomData").fetchone()[0], "preserve")
+            self.assertIsNone(connection.execute("SELECT 1 FROM sqlite_master WHERE name='schema_metadata'").fetchone())
