@@ -2,12 +2,19 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Protocol
 from uuid import uuid4
 
+from .defaults import MAX_TARGET_ATTEMPTS
+from .bronze import (
+    DEFAULT_BRONZE_CONFIG, BronzeConfig, BronzeContractError, BronzeFilesystemError,
+    BronzeIntegrationContext, BronzeIntegrityError, BronzeRegistrationError,
+    IntegratedSourceCatalog,
+    inspect_existing_bronze, integrate_selected_source, recover_existing_bronze,
+)
 from .ranking import DEFAULT_RANKING_CONFIG, RankingConfig, rank_candidates
 from .run_models import (
-    RunConfigurationError, RunStage, RunStateError, RunStatus, RunSummary, RunTargetStatus,
+    RunConfigurationError, RunStage, RunStateError, RunSummary, RunTargetStatus,
     TargetFailure, TargetFailureKind, require_run_id, require_utc,
 )
 from .run_repository import SQLiteRunRepository
@@ -31,8 +38,12 @@ def _new_run_id():
     return str(uuid4())
 
 
+class RunSourceCatalog(IntegratedSourceReader, IntegratedSourceCatalog, Protocol):
+    """One catalog supplies read-only collection snapshots and post-Bronze registration."""
+
+
 class AcquisitionRunService:
-    """Explicit new/resume operations. No scheduling, integration, or payload persistence.
+    """Sequential acquisition through Bronze, with explicit bounded resume/reconciliation.
 
     Providers are injected and retain ownership of their configuration, connections,
     and local retry policies. The caller closes provider resources when appropriate.
@@ -40,19 +51,22 @@ class AcquisitionRunService:
 
     def __init__(
         self, repository: SQLiteRunRepository, *, discovery: PageDiscovery,
-        catalog_reader: IntegratedSourceReader, caption_provider: CaptionProvider,
+        catalog_reader: RunSourceCatalog, caption_provider: CaptionProvider,
         selection_capability: SourceSelectionCapability,
         ranking_config: RankingConfig = DEFAULT_RANKING_CONFIG,
         selection_config: SelectionConfig = DEFAULT_SELECTION_CONFIG,
+        bronze_config: BronzeConfig = DEFAULT_BRONZE_CONFIG,
         clock: Callable[[], datetime] = _utc_now, id_factory: Callable[[], str] = _new_run_id,
     ):
         if (not isinstance(repository, SQLiteRunRepository)
                 or not isinstance(ranking_config, RankingConfig)
                 or not isinstance(selection_config, SelectionConfig)
+                or not isinstance(bronze_config, BronzeConfig)
                 or not callable(clock) or not callable(id_factory)):
             raise RunConfigurationError("Invalid acquisition run configuration")
         for value, methods in (
-            (discovery, ("discover_page",)), (catalog_reader, ("load_integrated_ids",)),
+            (discovery, ("discover_page",)),
+            (catalog_reader, ("load_integrated_ids", "is_integrated", "register_integrated")),
             (caption_provider, ("list_tracks", "fetch_track")),
             (selection_capability, ("assess_quality", "compare_sources")),
         ):
@@ -69,6 +83,7 @@ class AcquisitionRunService:
         self.selection_capability = selection_capability
         self.ranking_config = ranking_config
         self.selection_config = selection_config
+        self.bronze_config = bronze_config
         self.clock = clock
         self.id_factory = id_factory
 
@@ -98,12 +113,16 @@ class AcquisitionRunService:
             return self.repository.recover_run(run_id, self._now())
 
     def _drive(self, run_id):
-        run = self.repository.get_run(run_id)
-        if run.status in (RunStatus.COMPLETED, RunStatus.COMPLETED_WITH_FAILURES):
-            return self.repository.summary(run_id)
         self.repository.activate_run(run_id, self._now())
         # A single fixed pass: failures are retried only by a later explicit resume.
         for target in self.repository.list_targets(run_id):
+            # Check selected identity even on exhausted FAILED work: registration may
+            # have committed immediately before process death on the third attempt.
+            if target.selected_video_id is not None and target.status is not RunTargetStatus.INTEGRATED:
+                if self._reconcile(target):
+                    continue
+                target = next(t for t in self.repository.list_targets(run_id)
+                              if t.target.id == target.target.id)
             if target.terminal:
                 continue
             attempt = self.repository.begin_attempt(run_id, target.target.id, self._now())
@@ -120,11 +139,84 @@ class AcquisitionRunService:
             else:
                 status = RunTargetStatus.FAILED
                 fields = {"failure": outcome}
-            self.repository.finish_attempt(run_id, attempt.target.id, attempt.attempt_count,
-                                           self._now(), status=status, **fields)
-            # Do not retain all selected transcripts for future persistence work.
+            stored = self.repository.finish_attempt(run_id, attempt.target.id, attempt.attempt_count,
+                                                    self._now(), status=status, **fields)
+            if isinstance(outcome, SelectedSource):
+                context = BronzeIntegrationContext(run_id, stored.selected_at_utc, stored.target)
+                self._integrate(stored, lambda: integrate_selected_source(
+                    outcome, catalog=self.catalog_reader, config=self.bronze_config, context=context,
+                ))
             del outcome
         return self.repository.finish_invocation(run_id, self._now())
+
+    def _fail_integration(self, target, stage, kind):
+        return self.repository.fail_integration(
+            target.run_id, target.target.id, target.attempt_count, target.selected_video_id,
+            self._now(), TargetFailure(stage, kind),
+        )
+
+    def _integrate(self, target, operation):
+        # Database commits deliberately remain outside the component-error catcher.
+        try:
+            result = operation()
+            if result.video_id != target.selected_video_id:
+                raise BronzeContractError(target.selected_video_id, "integration_result")
+        except BronzeIntegrityError:
+            self._fail_integration(target, RunStage.BRONZE_VALIDATION, TargetFailureKind.INTEGRITY)
+            raise
+        except BronzeRegistrationError:
+            self._fail_integration(target, RunStage.SOURCE_REGISTRATION, TargetFailureKind.REGISTRATION)
+            return
+        except BronzeFilesystemError:
+            self._fail_integration(target, RunStage.BRONZE_PERSISTENCE, TargetFailureKind.FILESYSTEM)
+            return
+        except BronzeContractError:
+            self._fail_integration(target, RunStage.BRONZE_VALIDATION, TargetFailureKind.CONTRACT)
+            return
+        except (RunStateError, MemoryError):
+            raise
+        except Exception:
+            self._fail_integration(target, RunStage.BRONZE_PERSISTENCE,
+                                   TargetFailureKind.UNEXPECTED_COMPONENT_EXCEPTION)
+            return
+        self.repository.finish_integration(
+            target.run_id, target.target.id, target.attempt_count, target.selected_video_id, self._now(),
+        )
+
+    def _reconcile(self, target):
+        """True means this invocation is done with this target; False permits acquisition."""
+        try:
+            state = inspect_existing_bronze(target.selected_video_id,
+                                            catalog=self.catalog_reader, config=self.bronze_config)
+        except BronzeIntegrityError:
+            self._fail_integration(target, RunStage.BRONZE_VALIDATION, TargetFailureKind.INTEGRITY)
+            raise
+        except BronzeRegistrationError as error:
+            raise RunStateError("Integrated-source state could not be inspected safely") from error
+        except BronzeFilesystemError:
+            self._fail_integration(target, RunStage.BRONZE_PERSISTENCE, TargetFailureKind.FILESYSTEM)
+            return True
+        if state is not None and state.registered:
+            self.repository.finish_integration(target.run_id, target.target.id, target.attempt_count,
+                                               target.selected_video_id, self._now())
+            return True
+        if target.attempt_count >= MAX_TARGET_ATTEMPTS:
+            if target.status is not RunTargetStatus.FAILED:
+                self._fail_integration(
+                    target, RunStage.SOURCE_REGISTRATION if state else RunStage.ORCHESTRATION,
+                    TargetFailureKind.REGISTRATION if state else TargetFailureKind.INTERRUPTED,
+                )
+            return True
+        if state is not None:
+            attempt = self.repository.begin_attempt(target.run_id, target.target.id, self._now(),
+                                                     registration_only=True)
+            self._integrate(attempt, lambda: recover_existing_bronze(
+                target.selected_video_id, catalog=self.catalog_reader, config=self.bronze_config,
+            ))
+            return True
+        if target.status is RunTargetStatus.SELECTED:
+            self._fail_integration(target, RunStage.ORCHESTRATION, TargetFailureKind.INTERRUPTED)
+        return False
 
     def _process_target(self, target, reference_time):
         stage = RunStage.COLLECTION

@@ -3,9 +3,9 @@
 from .bronze import (
     BRONZE_SCHEMA_VERSION, DEFAULT_BRONZE_CONFIG, BronzeConfig, BronzeContractError,
     BronzeError, BronzeFilesystemError, BronzeIntegrationContext, BronzeIntegrationResult,
-    BronzeIntegrityError, BronzeRegistrationError, IntegratedSourceCatalog,
+    BronzeIntegrityError, BronzeRegistrationError, ExistingBronzeState, IntegratedSourceCatalog,
     canonical_bronze_path, construct_bronze_artifact, decode_bronze_artifact,
-    integrate_selected_source, validate_bronze_artifact,
+    inspect_existing_bronze, integrate_selected_source, recover_existing_bronze, validate_bronze_artifact,
 )
 
 from .models import (
@@ -52,19 +52,21 @@ from .run_models import (
     RunStatus, RunSummary, RunTarget, RunTargetStatus, TargetFailure, TargetFailureKind,
 )
 from .run_lock import RunBusyError
-from .run_repository import SQLiteRunRepository, initialize_run_repository
+from .run_repository import (RUN_STATE_SCHEMA_VERSION, SQLiteRunRepository, initialize_run_repository,
+                             migrate_run_repository_v1_to_v2)
 from .acquisition_runs import AcquisitionRunService
 
 __all__ = [
     "BRONZE_SCHEMA_VERSION", "DEFAULT_BRONZE_CONFIG", "BronzeConfig", "BronzeContractError",
     "BronzeError", "BronzeFilesystemError", "BronzeIntegrationContext", "BronzeIntegrationResult",
-    "BronzeIntegrityError", "BronzeRegistrationError", "IntegratedSourceCatalog",
+    "BronzeIntegrityError", "BronzeRegistrationError", "ExistingBronzeState", "IntegratedSourceCatalog",
     "canonical_bronze_path", "construct_bronze_artifact", "decode_bronze_artifact",
-    "integrate_selected_source", "validate_bronze_artifact",
+    "inspect_existing_bronze", "integrate_selected_source", "recover_existing_bronze", "validate_bronze_artifact",
     "AcquisitionRun", "AcquisitionRunService", "ChampionCatalog", "RunBusyError",
     "RunConfigurationError", "RunNotFoundError", "RunStage", "RunStateError", "RunStatus",
     "RunSummary", "RunTarget", "RunTargetStatus", "TargetFailure", "TargetFailureKind",
-    "SQLiteRunRepository", "initialize_run_repository", "load_catalog",
+    "RUN_STATE_SCHEMA_VERSION", "SQLiteRunRepository", "initialize_run_repository",
+    "migrate_run_repository_v1_to_v2", "load_catalog",
     "CandidateQualityAssessment", "ComparativeCandidateAssessment", "ComparativeSelection",
     "ComparativeSelectionRequest", "DEFAULT_SELECTION_CONFIG", "DeepSeekSelectionAdapter",
     "DeepSeekSelectionConfig", "NoSelection", "NoSelectionReason", "QualityAssessmentBatch",

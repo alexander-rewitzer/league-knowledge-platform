@@ -34,6 +34,7 @@ class RunTargetStatus(str, Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     SELECTED = "SELECTED"
+    INTEGRATED = "INTEGRATED"
     NO_SELECTION = "NO_SELECTION"
     FAILED = "FAILED"
 
@@ -46,6 +47,9 @@ class RunStage(str, Enum):
     QUALITY = "QUALITY"
     COMPARISON = "COMPARISON"
     ORCHESTRATION = "ORCHESTRATION"
+    BRONZE_PERSISTENCE = "BRONZE_PERSISTENCE"
+    BRONZE_VALIDATION = "BRONZE_VALIDATION"
+    SOURCE_REGISTRATION = "SOURCE_REGISTRATION"
 
 
 class TargetFailureKind(str, Enum):
@@ -68,6 +72,9 @@ class TargetFailureKind(str, Enum):
     PROVIDER_CONTRACT = "PROVIDER_CONTRACT"
     INTERRUPTED = "INTERRUPTED"
     UNEXPECTED_COMPONENT_EXCEPTION = "UNEXPECTED_COMPONENT_EXCEPTION"
+    FILESYSTEM = "FILESYSTEM"
+    INTEGRITY = "INTEGRITY"
+    REGISTRATION = "REGISTRATION"
 
 
 def require_utc(value: datetime) -> None:
@@ -147,6 +154,7 @@ class RunTarget:
     attempt_started_at_utc: datetime | None
     updated_at_utc: datetime
     finished_at_utc: datetime | None
+    selected_at_utc: datetime | None = None
 
     def __post_init__(self) -> None:
         require_run_id(self.run_id)
@@ -157,7 +165,7 @@ class RunTarget:
             raise ValueError("Invalid acquisition target progress")
         require_utc(self.updated_at_utc)
         for value in (self.updated_at_utc, self.first_started_at_utc,
-                      self.attempt_started_at_utc, self.finished_at_utc):
+                      self.attempt_started_at_utc, self.finished_at_utc, self.selected_at_utc):
             if value is not None:
                 require_utc(value)
         pending = self.status is RunTargetStatus.PENDING
@@ -169,16 +177,19 @@ class RunTarget:
                 raise ValueError("Pending work cannot have execution timestamps")
         elif self.first_started_at_utc is None or self.attempt_started_at_utc is None:
             raise ValueError("Started work needs execution timestamps")
-        finished = self.status in (RunTargetStatus.SELECTED, RunTargetStatus.NO_SELECTION,
+        finished = self.status in (RunTargetStatus.INTEGRATED, RunTargetStatus.NO_SELECTION,
                                    RunTargetStatus.FAILED)
         if finished != (self.finished_at_utc is not None):
             raise ValueError("Target outcome and finish time disagree")
-        if self.status is RunTargetStatus.SELECTED:
+        if self.selected_video_id is not None:
             _require_video_id(self.selected_video_id)
-            if not isinstance(self.selection_method, SelectionMethod):
+            if (not isinstance(self.selection_method, SelectionMethod) or self.selected_at_utc is None
+                    or self.status not in (RunTargetStatus.RUNNING, RunTargetStatus.SELECTED,
+                                           RunTargetStatus.INTEGRATED, RunTargetStatus.FAILED)):
                 raise ValueError("Selected work needs a selection method")
-        elif self.selected_video_id is not None or self.selection_method is not None:
-            raise ValueError("Only selected work has a selected source")
+        elif (self.selection_method is not None or self.selected_at_utc is not None
+              or self.status in (RunTargetStatus.SELECTED, RunTargetStatus.INTEGRATED)):
+            raise ValueError("Selection fields must identify one selected source")
         if self.status is RunTargetStatus.NO_SELECTION:
             if not isinstance(self.no_selection_reason, NoSelectionReason):
                 raise ValueError("No selection needs a domain reason")
@@ -191,7 +202,7 @@ class RunTarget:
 
     @property
     def terminal(self) -> bool:
-        return (self.status in (RunTargetStatus.SELECTED, RunTargetStatus.NO_SELECTION)
+        return (self.status in (RunTargetStatus.INTEGRATED, RunTargetStatus.NO_SELECTION)
                 or self.status is RunTargetStatus.FAILED
                 and self.attempt_count >= MAX_TARGET_ATTEMPTS)
 
@@ -207,3 +218,4 @@ class RunSummary:
     no_selection: int
     failed: int
     retryable_targets: int
+    integrated: int = 0

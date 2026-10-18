@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from league_knowledge_platform import (
-    AcquisitionRunService, CaptionProviderError, DiscoveryError, DiscoveryFailureKind,
+    BronzeConfig, AcquisitionRunService, CaptionProviderError, DiscoveryError, DiscoveryFailureKind,
     DiscoveryPage, RunBusyError, RunConfigurationError, RunNotFoundError, RunStage,
     RunStateError, RunStatus, RunTargetStatus, SelectionConfig, SourceCatalogError,
     SQLiteSourceCatalog, TargetFailureKind, TranscriptFailureKind,
@@ -28,6 +28,7 @@ class AcquisitionRunTests(unittest.TestCase):
 
     def service(self, **overrides):
         values = dict(discovery=Discovery(), catalog_reader=self.sources,
+                      bronze_config=BronzeConfig(self.root / "bronze"),
                       caption_provider=Captions(), selection_capability=Selection(),
                       selection_config=SelectionConfig(retry_delays_seconds=(0, 0)), clock=lambda: NOW)
         values.update(overrides)
@@ -38,14 +39,14 @@ class AcquisitionRunTests(unittest.TestCase):
         first = service.start_new_run(self.path)
         second = service.start_new_run(self.path)
         self.assertNotEqual(first.run_id, second.run_id)
-        self.assertEqual((first.status, first.selected, first.total_targets), (RunStatus.COMPLETED, 3, 3))
-        # Selection alone does not exclude the same sources in a subsequent new run.
-        self.assertEqual(second.selected, 3)
+        self.assertEqual((first.status, first.integrated, first.total_targets), (RunStatus.COMPLETED, 3, 3))
+        # Completed integrations are excluded globally on the next new run.
+        self.assertEqual((second.integrated, second.no_selection), (0, 3))
         self.assertEqual(len(service.discovery.calls), 6)
         resumed = service.resume_run(first.run_id)
         self.assertEqual(resumed, first)
         self.assertEqual(len(service.discovery.calls), 6)
-        self.assertFalse(self.sources.load_integrated_ids())
+        self.assertEqual(len(self.sources.load_integrated_ids()), 3)
 
     def test_explicit_unknown_resume_never_creates_or_loads_a_catalog(self):
         service = self.service()
@@ -74,13 +75,13 @@ class AcquisitionRunTests(unittest.TestCase):
         discovery = Discovery({"Ahri": [DiscoveryError(DiscoveryFailureKind.TIMEOUT, "secret-token")] * 3})
         service = self.service(discovery=discovery)
         first = service.start_new_run(self.path)
-        self.assertEqual((first.status, first.failed, first.selected, first.retryable_targets),
+        self.assertEqual((first.status, first.failed, first.integrated, first.retryable_targets),
                          (RunStatus.RESUMABLE, 1, 2, 1))
         self.assertEqual([t.id for t, _ in discovery.calls], ["Ahri", "Aatrox", "Anivia"])
         second = service.resume_run(first.run_id)
         self.assertEqual((second.status, second.failed), (RunStatus.RESUMABLE, 1))
         third = service.resume_run(first.run_id)
-        self.assertEqual((third.status, third.failed, third.selected),
+        self.assertEqual((third.status, third.failed, third.integrated),
                          (RunStatus.COMPLETED_WITH_FAILURES, 1, 2))
         before = self.repository.list_targets(first.run_id)
         self.assertEqual([t.attempt_count for t in before], [3, 1, 1])
@@ -102,7 +103,7 @@ class AcquisitionRunTests(unittest.TestCase):
         self.assertEqual(sum(r.target_id == "Ahri" for r in capability.quality_calls), 3)
         self.assertEqual(sum(t.id == "Ahri" for t, _ in service.discovery.calls), 1)
         self.assertEqual(service.caption_provider.calls.count("AhriVideo"), 1)
-        self.assertEqual(summary.selected, 2)
+        self.assertEqual(summary.integrated, 2)
 
     def test_transcript_and_unexpected_target_errors_are_sanitized_and_isolated(self):
         for captions, discovery, stage, kind in (
@@ -169,6 +170,7 @@ class AcquisitionRunTests(unittest.TestCase):
         self.repository.begin_attempt(run_id, "Ahri", NOW)
         self.repository.finish_attempt(run_id, "Ahri", 1, NOW, status=RunTargetStatus.SELECTED,
                                        selected_video_id="selected", selection_method=SelectionMethod.ONLY_PASSING_CANDIDATE)
+        self.repository.finish_integration(run_id, "Ahri", 1, "selected", NOW)
         self.repository.begin_attempt(run_id, "Anivia", NOW)
         self.repository.finish_attempt(run_id, "Anivia", 1, NOW, status=RunTargetStatus.NO_SELECTION,
                                        no_selection_reason=NoSelectionReason.ALL_REJECTED)
@@ -192,25 +194,24 @@ class AcquisitionRunTests(unittest.TestCase):
                 service = self.service()
                 resumed = service.resume_run(old.run_id)
                 newer = service.start_new_run(self.path)
-                self.assertEqual((resumed.total_targets, resumed.selected), (3, 3))
-                self.assertEqual((newer.total_targets, newer.selected), (len(changed), len(changed)))
+                self.assertEqual((resumed.total_targets, resumed.integrated + resumed.no_selection), (3, 3))
+                self.assertEqual((newer.total_targets, newer.integrated + newer.no_selection), (len(changed), len(changed)))
                 self.assertEqual([t.target.id for t in self.repository.list_targets(old.run_id)],
                                  [t["id"] for t in CHAMPIONS])
 
-    def test_integrated_filtering_is_read_only_and_transcripts_are_not_persisted(self):
+    def test_only_new_winners_are_registered_and_transcripts_stay_out_of_run_state(self):
         with closing(sqlite3.connect(self.sources.path)) as connection, connection:
             connection.execute("INSERT INTO integrated_sources VALUES (?,?)", ("AhriVideo", NOW.isoformat()))
         before = self.sources.path.read_bytes()
         service = self.service()
-        with patch.object(SQLiteSourceCatalog, "register_integrated",
-                          side_effect=AssertionError("Registration forbidden")) as registration:
+        with patch.object(self.sources, "register_integrated", wraps=self.sources.register_integrated) as registration:
             summary = service.start_new_run(self.path)
-            registration.assert_not_called()
-        self.assertEqual((summary.selected, summary.no_selection), (2, 1))
-        self.assertEqual(self.sources.path.read_bytes(), before)
+        self.assertEqual((summary.integrated, summary.no_selection), (2, 1))
+        self.assertEqual([call.args[0] for call in registration.call_args_list], ["AatroxVideo", "AniviaVideo"])
+        self.assertNotEqual(self.sources.path.read_bytes(), before)
         self.assertNotIn(b"Synthetic complete transcript", self.repository.path.read_bytes())
         self.assertEqual({p.name for p in self.root.iterdir()},
-                         {"catalog.json", "runs.sqlite3", "runs.sqlite3.lock", "sources.sqlite3"})
+                         {"catalog.json", "runs.sqlite3", "runs.sqlite3.lock", "sources.sqlite3", "bronze"})
 
     def test_invalid_catalog_and_configuration_fail_before_run_creation(self):
         self.path.write_text("broken", encoding="utf-8")

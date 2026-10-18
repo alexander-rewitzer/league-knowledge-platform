@@ -4,15 +4,15 @@ The Knowledge Platform is the acquisition and preparation side of an experiment 
 
 ## V1 acquisition and compilation flow
 
-The architecture has three separate views. Source Acquisition provides transient selection outcomes and a separate Bronze integration API; the downstream curation and comparative experiment remain planned. These views preserve the existing Bronze/Silver/Gold responsibilities and local-first design.
+The architecture has three separate views. Source Acquisition integrates selected transient sources into Bronze through resumable orchestration; the downstream curation and comparative experiment remain planned. These views preserve the existing Bronze/Silver/Gold responsibilities and local-first design.
 
 | View | Current status |
 | --- | --- |
-| [Source Acquisition](#source-acquisition) | Implemented target loading, discovery, integrated-ID lookup, filtering/refill, metadata ranking, transient transcripts, absolute quality assessment, deterministic gating, conditional comparison, and separately invoked Bronze integration |
+| [Source Acquisition](#source-acquisition) | Implemented target loading, discovery, integrated-ID lookup, filtering/refill, metadata ranking, transient transcripts, absolute quality assessment, deterministic gating, conditional comparison, and run-integrated Bronze persistence/registration |
 | [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Planned Silver processing, extraction, external validation, existing-knowledge inspection, integration, deterministic writing, and Gold |
 | [Experimental Evaluation](#planned-comparative-evaluation) | Planned fixed-size baseline and quality/query-time-efficiency comparison |
 
-Manually initiated sequential run orchestration is implemented through source selection, with its own SQLite progress database and immutable target snapshots. The integrated-source catalog remains separate. Bronze persistence, curation and other future operational SQL responsibilities are not delivered by run progress. The platform is not yet a completed end-to-end acquisition/curation system.
+Manually initiated sequential run orchestration is implemented through Bronze persistence and source registration, with its own SQLite progress database and immutable target snapshots. The integrated-source catalog remains separate. Run progress coordinates the existing Bronze API but remains separate from artifact storage. Curation and other future operational SQL responsibilities remain planned; the platform is not yet a completed acquisition/curation system.
 
 ## Source Acquisition
 
@@ -37,11 +37,13 @@ flowchart TD
     L -- "Validated winner" --> W
     Q -. "Technical failure after allowed attempts" .-> F["SELECTION_FAILED"]
     L -. "Technical failure after allowed attempts" .-> F
-    W -- "Explicit caller handoff" --> B["Atomic selected-source Bronze persistence"]
+    W --> PS["Persist intermediate SELECTED"]
+    PS -- "Original in-memory SelectedSource" --> B["Atomic selected-source Bronze persistence"]
     B -- "Durable file validated" --> IC["Idempotent integrated-source registration"]
+    IC --> IT["Persist terminal INTEGRATED"]
 ```
 
-The initial target catalog lists all Champions without enumerating Champion × Role combinations. Run orchestration attempts every original target, resumes across sessions, and records at most one selected source per target/run. Actual integration remains downstream of selection. A Champion is never permanently complete. Role-specific and reusable general knowledge can emerge from content; systematic general-concept acquisition remains future scope.
+The initial target catalog lists all Champions without enumerating Champion × Role combinations. Run orchestration attempts every original target, resumes across sessions, and integrates at most one source per target/run. The same target attempt passes its selected source directly to Bronze and completes only after registration. A Champion is never permanently complete. Role-specific and reusable general knowledge can emerge from content; systematic general-concept acquisition remains future scope.
 
 For each target, collection seeks 20 unique unseen candidates and returns at most 20, refilling after integrated-ID filtering and cross-page deduplication until enough are found or search is exhausted. Normal absence of a usable source is a persisted `NO_SELECTION`, not a technical failure. Duration is an eligibility filter only; popularity/recency ranking returns up to three candidates. Available English transcripts are acquired transiently, retaining original candidate identity and segment timing/provenance. Technical transcript-acquisition errors abort that target attempt before source selection; later Champions can continue.
 
@@ -53,11 +55,11 @@ The implemented semantic stages are separate capabilities behind a provider-inde
 
 **Stage 2 — relative comparison:** Only passing transcripts are compared for target relevance, educational usefulness, information density, clarity/explanatory value, useful breadth/depth, and noise. Fresh request objects and messages exclude Stage-1 assessments, booleans, codes, and rationales. The chosen ID and complete assessment coverage are validated against the passing set. No weighted numeric formula is introduced.
 
-Each semantic stage permits at most three total attempts for recoverable failures or invalid output, reusing unchanged inputs. Unrecoverable errors fail explicitly without consuming unnecessary retries. Technical inability to complete selection yields `SELECTION_FAILED`, not `NO_SELECTION` or a fallback winner. A Stage-2 failure does not repeat successful quality assessment or restart acquisition. All results, assessments, and transcripts remain transient. Only `SELECTED` is eligible for the separate Bronze integration API; it does not itself persist or register a source. See the [selection API overview](../README.md#source-quality-assessment-and-selection).
+Each semantic stage permits at most three total attempts for recoverable failures or invalid output, reusing unchanged inputs. Unrecoverable errors fail explicitly without consuming unnecessary retries. Technical inability to complete selection yields `SELECTION_FAILED`, not `NO_SELECTION` or a fallback winner. A Stage-2 failure does not repeat successful quality assessment or restart acquisition. All results, assessments, and transcripts remain transient. Only a successfully selected source is eligible for the Bronze integration API; it does not itself persist or register a source. See the [selection API overview](../README.md#source-quality-assessment-and-selection).
 
 ## Knowledge layers and curator
 
-Bronze persistence is implemented separately. Silver and the curator responsibilities below remain planned. The intended curator comprises logical Knowledge Extraction and Knowledge Integration stages followed by a Deterministic Writer. Extraction progresses through SEGMENT, VALIDATE, EXTRACT, VALIDATE, AUDIT/REFINE, and VALIDATE to Knowledge Items. Structured artifacts pass explicit validation gates; failures return corrective feedback to the agent before progression. Integration inspects existing Gold and proposes governed changes; deterministic code applies validated, approved changes. This staged explanation preserves the existing curator boundary and does not establish a new runtime implementation or artifact schema. See [planned curation](../README.md#planned-agentic-knowledge-curation).
+Bronze persistence is implemented and invoked directly by acquisition runs. Silver and the curator responsibilities below remain planned. The intended curator comprises logical Knowledge Extraction and Knowledge Integration stages followed by a Deterministic Writer. Extraction progresses through SEGMENT, VALIDATE, EXTRACT, VALIDATE, AUDIT/REFINE, and VALIDATE to Knowledge Items. Structured artifacts pass explicit validation gates; failures return corrective feedback to the agent before progression. Integration inspects existing Gold and proposes governed changes; deterministic code applies validated, approved changes. This staged explanation preserves the existing curator boundary and does not establish a new runtime implementation or artifact schema. See [planned curation](../README.md#planned-agentic-knowledge-curation).
 
 ```mermaid
 flowchart TD
@@ -85,11 +87,11 @@ The curator may apply NO_CHANGE, ENRICH, REWRITE, CREATE, MERGE, LINK, or FLAG_C
 
 ## Local state and retrieval boundary
 
-The implemented SQLite catalog stores only integrated source IDs and their registration timestamps. Registration is idempotent and must follow successful persistence by the separate Bronze integration caller; the catalog does not implement Bronze itself. Collection reads a fixed integrated-ID snapshot and does not persist transient candidates.
+The implemented SQLite catalog stores only integrated source IDs and their registration timestamps. Registration is idempotent and follows successful persistence by the Bronze integration API; the catalog does not implement Bronze itself. Collection reads a fixed integrated-ID snapshot and does not persist transient candidates.
 
-The [Bronze API](../README.md#selected-source-bronze-integration) stores one versioned source-centric JSON artifact per case-sensitive video ID, using a reversible filename encoding for Windows compatibility. It retains the original source/transcript and first-integration target/run/winner provenance. Sibling staging, flushing, validation and non-overwriting publication precede catalog registration. Compatible retries reuse the original bytes, including after a crash between publication and registration. Later contextual provenance does not independently conflict or mutate Bronze; materially different source/transcript content fails explicitly. No event-history tables, provenance sidecars, Silver transformations or run-state changes are added.
+The [Bronze API](../README.md#selected-source-bronze-integration) stores one versioned source-centric JSON artifact per case-sensitive video ID, using a reversible filename encoding for Windows compatibility. It retains the original source/transcript and first-integration target/run/winner provenance. Sibling staging, flushing, validation and non-overwriting publication precede catalog registration. Compatible retries reuse the original bytes, including after a crash between publication and registration. Later contextual provenance does not independently conflict or mutate Bronze; materially different source/transcript content fails explicitly. Bronze owns no event-history tables, provenance sidecars, Silver transformations or run-state transitions. Run orchestration separately projects successful integration into its own database.
 
-**Selected and integrated are distinct states.** A selected source is not registered until a later caller successfully persists it to Bronze. In the intended repeated-run flow, successful persistence/registration of A allows later collection to exclude A and seek B for the same Champion; after B is also integrated, another collection excludes both while seeking C. Run selection/progress and a separately invoked Bronze integration API are implemented. The run service does not invoke Bronze automatically. Rejected or losing candidates are not registered by acquisition.
+**Selected and integrated are distinct states.** The run service persists selection before handing the in-memory source to Bronze; registration follows validated durable persistence. In the intended repeated-run flow, successful persistence/registration of A allows later collection to exclude A and seek B for the same Champion; after B is also integrated, another collection excludes both while seeking C. Run orchestration invokes the Bronze API directly and persists `INTEGRATED` only after that operation succeeds. Rejected or losing candidates are not registered by acquisition.
 
 The run service exposes explicit new/resume operations. Its separate SQLite database stores `acquisition_runs` and `acquisition_run_targets`; it has no write path into `integrated_sources`. Creation atomically copies catalog/version provenance and each Champion's ID, key, name and order, with an immutable count and canonical snapshot hash. SQL constraints/triggers protect the original target universe. Resume reconstructs that universe from stored rows and never loads a current or historical external catalog file.
 
@@ -97,18 +99,23 @@ The run service exposes explicit new/resume operations. Its separate SQLite data
 stateDiagram-v2
     [*] --> PENDING
     PENDING --> RUNNING: Commit attempt count + 1
-    RUNNING --> SELECTED: Selection succeeded
+    RUNNING --> SELECTED: Persist successful selection
     RUNNING --> NO_SELECTION: Normal domain outcome
-    RUNNING --> FAILED: Technical failure or interruption recovery
-    FAILED --> RUNNING: Explicit resume with attempt count below 3
-    SELECTED --> [*]: Skip on resume
-    NO_SELECTION --> [*]: Skip on resume
+    RUNNING --> FAILED: Technical failure or interruption
+    SELECTED --> INTEGRATED: Bronze and registration succeeded
+    SELECTED --> FAILED: Integration failed or payload lost
+    SELECTED --> RUNNING: Claim registration recovery
+    FAILED --> RUNNING: Claim bounded full or registration attempt
+    FAILED --> INTEGRATED: Passive proof of durable integration
+    RUNNING --> INTEGRATED: Registration-only recovery succeeded
+    INTEGRATED --> [*]
+    NO_SELECTION --> [*]
     FAILED --> [*]: Exhausted at count 3
 ```
 
-The attempt-start commit precedes external calls; every persistence transaction is short. Existing component retries stay internal to their component. A local OS execution guard rejects overlapping invocations without holding SQL locks during provider calls; it has no lease or heartbeat. After a crash, persisted `ACTIVE`/`RUNNING` is stale until explicit inspection/resume recovers it. Recovery records `FAILED / ORCHESTRATION / INTERRUPTED` without increasing the already consumed attempt count. Each invocation makes one pass; failed targets below three attempts wait for another explicit resume. Selected, normally unselected and exhausted targets are skipped.
+The attempt-start commit precedes external calls; every persistence transaction is short. Existing component retries stay internal to their component. A local OS execution guard rejects overlapping invocations without holding SQL locks during provider calls; it has no lease or heartbeat. After a crash, persisted `ACTIVE`/`RUNNING` is stale until explicit inspection/resume recovers it. Recovery records `FAILED / ORCHESTRATION / INTERRUPTED` without increasing the already consumed attempt count. Each invocation makes one pass; failed targets below three attempts wait for another explicit resume. Integrated and normally unselected targets are skipped. Selected identities on unresolved/exhausted work are reconciled before any acquisition retry.
 
-Run summaries derive counts from the original stored targets. Retryable work leaves `RESUMABLE`; all successful/domain outcomes yield `COMPLETED`; terminal exhausted failures yield `COMPLETED_WITH_FAILURES`. Target failures do not prevent later Champions, while unsafe persistent-state failures abort explicitly. A crash after external success but before result commit may repeat external work. Only minimal selection identity/method, outcome/failure codes and timestamps are persisted; transcript payloads and the full in-memory selected-source handoff remain outside run-state storage. See [run API and recovery](../README.md#resumable-acquisition-runs).
+Run summaries derive counts from the original stored targets. Retryable work leaves `RESUMABLE`; all `INTEGRATED`/`NO_SELECTION` outcomes yield `COMPLETED`; terminal exhausted failures yield `COMPLETED_WITH_FAILURES`. Target failures do not prevent later Champions, while unsafe persistent-state failures abort explicitly. A valid canonical Bronze artifact plus existing registration repairs stale selected state without another attempt or registration call. Missing registration requires a newly committed registration-only attempt; missing Bronze requires a newly committed full attempt. Both share the maximum of three. Passive repair remains possible after exhaustion, while corrupt/incompatible Bronze aborts explicitly without rediscovery. Only minimal selection identity/method, outcome/failure codes and timestamps are persisted; transcripts remain outside run-state storage. The original in-memory selected source passes directly to Bronze with the stored run/target context. Run schema v2 is initialized explicitly; v1 requires a validated backup and atomic one-step migration. Legacy selections remain unresolved and retain their budgets/snapshots. See [run API and recovery](../README.md#resumable-acquisition-runs) and [migration](../README.md#explicit-run-state-migration).
 
 Additional sources may create or enrich knowledge, overlap with existing knowledge, expose conflicts, or yield `NO_CHANGE` in planned curation. Gold evolves through governed integration with existing knowledge rather than a separate rebuild for every source. These are intended integration outcomes, not implemented curation or guaranteed marginal knowledge gain.
 
