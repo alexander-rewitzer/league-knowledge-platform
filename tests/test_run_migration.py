@@ -229,3 +229,28 @@ class RunMigrationTests(unittest.TestCase):
             migrate_run_repository_v1_to_v2(self.path, backup_path=self.backup)
         self.assertFalse(self.backup.exists())
         self.assertEqual(self.version(), 1)
+
+    def test_explicit_indexes_and_views_are_rejected_without_source_changes(self):
+        index = "CREATE INDEX custom_target_status ON acquisition_run_targets(status)"
+        view = "CREATE VIEW custom_target_view AS SELECT champion_id,status FROM acquisition_run_targets"
+        for additions in ((index,), (view,), (index, view)):
+            with self.subTest(additions=additions), TemporaryDirectory() as directory:
+                path = Path(directory) / "runs.sqlite3"
+                backup = Path(directory) / "backup.sqlite3"
+                legacy_database(path, self.catalog)
+                with closing(sqlite3.connect(path)) as connection, connection:
+                    for statement in additions:
+                        connection.execute(statement)
+                before = path.read_bytes()
+                with self.assertRaises(RunStateError):
+                    migrate_run_repository_v1_to_v2(path, backup_path=backup)
+                self.assertFalse(backup.exists())
+                self.assertEqual(path.read_bytes(), before)
+                self.assertEqual(self.version(path), 1)
+                with closing(sqlite3.connect(path)) as connection:
+                    if index in additions:
+                        self.assertIsNotNone(connection.execute(
+                            "SELECT 1 FROM sqlite_master WHERE name='custom_target_status'"
+                        ).fetchone())
+                    if view in additions:
+                        self.assertEqual(connection.execute("SELECT count(*) FROM custom_target_view").fetchone()[0], 3)

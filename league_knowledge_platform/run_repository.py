@@ -237,7 +237,7 @@ class SQLiteRunRepository:
     def _require_schema(self, connection, *, legacy=False):
         objects = {row["name"]: (row["type"], " ".join(row["sql"].split()))
                    for row in connection.execute(
-                       "SELECT name,type,sql FROM sqlite_master WHERE type IN ('table','trigger') "
+                       "SELECT name,type,sql FROM sqlite_master WHERE type IN ('table','trigger','index','view') "
                        "AND name NOT LIKE 'sqlite_%'")}
         tables = _V1_TABLES if legacy else _TABLES
         expected = {name: ("table", " ".join(sql.split())) for name, sql in tables.items()}
