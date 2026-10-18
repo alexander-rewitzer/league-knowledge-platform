@@ -34,7 +34,7 @@ class RunRepositoryTests(unittest.TestCase):
         self.repository.activate_run(run_id, NOW)
         return self.repository.begin_attempt(run_id, target_id, NOW)
 
-    def fail(self, attempt, kind=TargetFailureKind.TIMEOUT):
+    def record_failure(self, attempt, kind=TargetFailureKind.TIMEOUT):
         self.repository.finish_attempt(attempt.run_id, attempt.target.id, attempt.attempt_count,
                                        NOW, status=RunTargetStatus.FAILED,
                                        failure=TargetFailure(RunStage.DISCOVERY, kind))
@@ -123,7 +123,9 @@ class RunRepositoryTests(unittest.TestCase):
                                        selection_method=SelectionMethod.ONLY_PASSING_CANDIDATE)
         saved = self.repository.list_targets("run-one")[0]
         self.assertEqual(saved.selected_video_id, "video-A")
-        self.assertIsNotNone(saved.finished_at_utc)
+        self.assertIsNone(saved.finished_at_utc)
+        self.assertEqual(saved.selected_at_utc, NOW + timedelta(seconds=1))
+        self.assertFalse(saved.terminal)
         with self.assertRaises(RunStateError):
             self.repository.begin_attempt("run-one", "Ahri", NOW)
 
@@ -158,7 +160,7 @@ class RunRepositoryTests(unittest.TestCase):
         for expected in (1, 2, 3):
             attempt = self.begin()
             self.assertEqual(attempt.attempt_count, expected)
-            self.fail(attempt)
+            self.record_failure(attempt)
             self.repository.finish_invocation("run-one", NOW)
         before = self.repository.list_targets("run-one")[0]
         self.repository.recover_run("run-one", NOW + timedelta(days=1))
@@ -180,7 +182,10 @@ class RunRepositoryTests(unittest.TestCase):
                                                no_selection_reason=NoSelectionReason.ALL_REJECTED)
         summary = self.repository.finish_invocation("run-one", NOW)
         self.assertEqual((summary.status, summary.selected, summary.no_selection, summary.total_targets),
-                         (RunStatus.COMPLETED, 1, 2, 3))
+                         (RunStatus.RESUMABLE, 1, 2, 3))
+        self.repository.finish_integration("run-one", "Ahri", 1, "shared", NOW)
+        summary = self.repository.finish_invocation("run-one", NOW)
+        self.assertEqual((summary.status, summary.selected, summary.integrated), (RunStatus.COMPLETED, 0, 1))
         before = self.repository.get_run("run-one")
         self.assertEqual(self.repository.recover_run("run-one", NOW + timedelta(days=1)), summary)
         self.assertEqual(self.repository.get_run("run-one"), before)

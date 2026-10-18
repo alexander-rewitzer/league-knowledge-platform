@@ -26,7 +26,7 @@ League of Legends therefore serves as the experimental domain rather than the pr
 
 The project does not start from a pre-structured knowledge base. Its preparation pipeline is intended to build and evolve knowledge from public unstructured source material, moving some interpretation and relationship-building work upstream. A structured target catalog identifies what to acquire; it is not the knowledge corpus.
 
-The implemented **Source Acquisition** components discover and select source material. **Agentic Knowledge Curation** and **Experimental Evaluation** remain separate planned stages described below. This is not a completed end-to-end acquisition/curation system.
+The implemented **Source Acquisition** pipeline discovers, selects and integrates source material into Bronze. **Agentic Knowledge Curation** and **Experimental Evaluation** remain separate planned stages described below. This is not a completed end-to-end acquisition/curation system.
 
 ### Data Sources
 
@@ -56,19 +56,23 @@ flowchart TD
     L -- "Validated winner" --> W
     Q -. "Technical failure after allowed attempts" .-> F["SELECTION_FAILED"]
     L -. "Technical failure after allowed attempts" .-> F
+    W --> PS["Persist SELECTED"]
+    PS --> B["Durable validated Bronze"]
+    B --> IC["Integrated-source registration"]
+    IC --> IT["Persist INTEGRATED"]
 ```
 
 Stage 1 assesses each available transcript independently against an absolute minimum standard. The flow is **LLM semantic judgement → structured assessment → deterministic application rules → PASS / REJECT**. Application code derives PASS only when `target_relevant`, `educational_substance`, and `transcript_usable` are true and `noise_dominates` is false. The LLM does not return the final gate decision.
 
 Zero passing candidates produces normal `NO_SELECTION`. One is selected directly, without a comparative call. Two or three invoke a separate relative comparison to select the strongest passing source. Stage 2 receives no Stage-1 assessments, booleans, reason codes, or rationales. Neither semantic stage receives popularity, recency, ranking scores, discovery order, or original shortlist rank; explicit request allowlists preserve this boundary.
 
-Selection uses full available transcript text and retains the original candidate identity and segment timing/provenance internally. An empty acquired set produces `NO_SELECTION` without an LLM call. A technical selection failure produces `SELECTION_FAILED`, never a fallback winner or normal no-selection. Technical caption-acquisition failures abort before source selection. Only a successfully selected source is eligible for the separate [Bronze integration API](#selected-source-bronze-integration).
+Selection uses full available transcript text and retains the original candidate identity and segment timing/provenance internally. An empty acquired set produces `NO_SELECTION` without an LLM call. A technical selection failure produces `SELECTION_FAILED`, never a fallback winner or normal no-selection. Technical caption-acquisition failures abort before source selection. The run service passes only a successfully selected source to the [Bronze integration API](#selected-source-bronze-integration), then records successful integration.
 
 Automated discovery refers to callable components. A manually invoked [run service](#resumable-acquisition-runs) now composes them sequentially with persistent progress. Scheduling remains outside V1.
 
 ### Incremental Source Acquisition
 
-Repeated acquisition is intended to find additional previously unseen sources for the same Champion. Integrated-source filtering, resumable acquisition through selection, and a separately invoked Bronze integration API are implemented; subsequent knowledge integration remains planned. The following example assumes the caller invokes Bronze integration after each selected source:
+Repeated acquisition is intended to find additional previously unseen sources for the same Champion. Integrated-source filtering and resumable acquisition through Bronze persistence and registration are implemented; subsequent knowledge curation remains planned. The run service performs the integration in the following example:
 
 | Logical run | Example |
 | --- | --- |
@@ -76,13 +80,13 @@ Repeated acquisition is intended to find additional previously unseen sources fo
 | Run 2 | Integrated Source A is excluded; Source B may be selected and later registered after successful Bronze persistence. |
 | Run 3 | Integrated Sources A and B are excluded; Source C may be selected. |
 
-**Selected does not mean integrated.** Discovery, ranking, quality assessment, and selection do not register sources. A later caller registers a source only after successful Bronze persistence. Unselected or rejected candidates are not added to the catalog by acquisition.
+**Selected does not mean integrated.** Discovery, ranking, quality assessment, and selection do not register sources. The run service invokes Bronze integration after persisting selection; the Bronze API registers the source only after successful durable persistence. Unselected or rejected candidates are not added to the catalog by acquisition.
 
 An additional source does not necessarily contribute useful new knowledge. Planned curation may create knowledge, enrich existing knowledge, find overlap, flag conflicts, or make `NO_CHANGE`. It will evolve the existing Gold knowledge rather than rebuild an independent knowledge base for every source. Reusable concepts may emerge from Champion sources; systematic concept-target acquisition remains future scope.
 
 ## Current Implementation
 
-The repository implements Source Acquisition through transient source selection, resumable progress, and separately invoked Bronze integration:
+The repository implements end-to-end Source Acquisition through transient selection, resumable progress, durable Bronze and source registration:
 
 | Implemented capability | Repository evidence |
 | --- | --- |
@@ -95,12 +99,12 @@ The repository implements Source Acquisition through transient source selection,
 | Transient acquisition of timestamped English YouTube captions, manual-English preference, and provider failure handling | [Acquisition](league_knowledge_platform/transcripts.py), [provider adapter](league_knowledge_platform/youtube_caption_provider.py) |
 | Absolute semantic quality assessment, deterministic PASS / REJECT, direct or comparative selection, and explicit no-selection/technical-failure outcomes | [Selection service](league_knowledge_platform/source_selection.py), [domain contracts](league_knowledge_platform/selection_models.py) |
 | Separate allowlisted semantic requests, configurable DeepSeek adapter, and at most three attempts per semantic stage | [DeepSeek adapter](league_knowledge_platform/deepseek_selection.py), [versioned prompts](league_knowledge_platform/selection_prompts.py) |
-| Explicit new/resume operations, immutable per-run target snapshots, three-attempt budgets, and crash recovery | [Run service](league_knowledge_platform/acquisition_runs.py), [SQLite run state](league_knowledge_platform/run_repository.py), [run contracts](league_knowledge_platform/run_models.py) |
+| Explicit new/resume operations through Bronze, immutable target snapshots, shared three-attempt budgets, and reconciliation | [Run service](league_knowledge_platform/acquisition_runs.py), [SQLite run state](league_knowledge_platform/run_repository.py), [run contracts](league_knowledge_platform/run_models.py) |
 | Centralized non-secret service defaults and offline unit/integration tests using fakes and synthetic HTTP fixtures | [Defaults](league_knowledge_platform/defaults.py), [tests](tests/) |
 
 Collection returns at most 20 unique unseen candidates. Duration is an eligibility filter only; popularity and recency determine ranking. The shortlist contains 0–3 candidates. Caption unavailability is candidate-level and non-fatal; technical provider failures fail the operation without returning a successful partial transcript set.
 
-The separate Bronze integration API persists and validates the selected source before calling catalog registration. Discovery, ranking, transcript acquisition, semantic selection and run progress do not invoke it automatically or persist their transient candidates.
+The run service invokes the Bronze integration API with the original in-memory selected source. Bronze persistence and validation precede catalog registration and the final run-state commit. Discovery, ranking, transcript acquisition and semantic selection do not persist their transient candidates.
 
 The platform as a whole remains in development. Silver processing, agentic curation, the Deterministic Writer, Gold storage, and retrieval indexing are planned, not delivered functionality. The fixed-size baseline and comparative evaluation are also not implemented. Implemented acquisition and its offline tests do not demonstrate live provider availability, semantic model quality, or the research hypothesis.
 
@@ -160,7 +164,7 @@ See [V1 scope](docs/scope.md), [architecture](docs/architecture.md), and the [ar
 | --- | --- |
 | Implemented | Champion targets, discovery, integrated-source lookup, unseen collection, ranking, transient transcripts, absolute quality assessment, deterministic gating, conditional comparison, and resumable acquisition runs with offline tests |
 | In development | Knowledge Platform overall; acquisition components exist, but the full acquisition/curation pipeline is incomplete |
-| Implemented | Explicit selected-source Bronze persistence, post-persistence registration and offline recovery tests |
+| Implemented | Selected-source Bronze persistence, post-persistence registration, run integration and offline crash-recovery tests |
 | Planned next | Source-faithful Silver processing |
 | Planned subsequent | Validated agentic curation, Deterministic Writer, canonical Gold, incremental retrieval index, and raw knowledge-change metrics |
 | Planned evaluation | Fixed-size baseline, query-time comparison, and quality/efficiency/preparation measurements |
@@ -190,7 +194,7 @@ Each page enriches its search results with available video metadata. Missing opt
 
 ## Local source catalog and unseen collection
 
-The source catalog stores only globally integrated YouTube video IDs. A selected source qualifies as integrated after its raw material has been successfully persisted to Bronze. Discovery, collection, ranking, and rejection do not register sources. The later Bronze integration caller must invoke `catalog.register_integrated(video_id)` only after persistence succeeds; repeating that registration is safe and preserves the first registration timestamp. The catalog does not perform or verify Bronze writes itself.
+The source catalog stores only globally integrated YouTube video IDs. A selected source qualifies as integrated after its raw material has been successfully persisted to Bronze and registered. Discovery, collection, ranking, and rejection do not register sources. The Bronze integration API invokes `catalog.register_integrated(video_id)` only after persistence succeeds; repeating that registration is safe and preserves the first registration timestamp. The catalog does not perform or verify Bronze writes itself.
 
 Use SQLite 3.24 or newer with Python's standard-library `sqlite3`. Explicit initialization creates schema version 1; construction and reads never create or migrate a catalog. The database path is caller-controlled; `.state/knowledge_platform.sqlite3` is a suggested local path excluded from Git.
 
@@ -309,7 +313,7 @@ The selection service owns retries: at most three total attempts per semantic st
 
 ## Selected-source Bronze integration
 
-`integrate_selected_source` explicitly consumes an in-memory `SelectedSource`. It does not call discovery, captions, an LLM, Silver or Gold. The run service remains separate: its stored video ID alone cannot reconstruct the full transcript needed here.
+`integrate_selected_source` explicitly consumes an in-memory `SelectedSource`. It does not call discovery, captions, an LLM, Silver or Gold. The run service invokes it directly during a normal target attempt; its stored video ID alone cannot reconstruct a lost transcript. Existing Bronze can instead be recovered without that payload.
 
 ```python
 from league_knowledge_platform import (
@@ -346,7 +350,7 @@ Ordinary failures clean their own staging file. After process death, a caller-se
 
 The run database copies Champion ID, Riot key, name and order together with catalog schema/roster versions, generation time, source provenance and a canonical snapshot hash. Additions, removals and metadata changes affect subsequent new runs only. Resume remains possible without the original catalog file. `load_catalog()` exposes the complete immutable catalog; `load_targets()` retains its existing tuple API and validation behavior.
 
-Use a separate local file for run state. Construction is inert; `initialize_run_repository()` explicitly creates or validates schema version 1. The integrated-source catalog must already be initialized separately as shown above. The following example performs **live acquisition**, including provider calls for the run targets, and requires the optional caption/selection dependencies and runtime credentials:
+Use a separate local file for run state. Construction is inert; `initialize_run_repository()` explicitly creates or validates run schema version 2. Existing v1 databases require the explicit backed-up migration described below. The integrated-source catalog must already be initialized separately as shown above. The following example performs **live acquisition**, including provider calls for the run targets, and requires the optional caption/selection dependencies and runtime credentials:
 
 ```python
 from pathlib import Path
@@ -369,10 +373,34 @@ with YouTubeCaptionProvider() as captions, DeepSeekSelectionAdapter() as selecti
 
 Run IDs remain in `acquisition_runs` after interruption and can be inspected before explicitly choosing one to resume. `get_run()`, `list_targets()` and `summary()` read persisted snapshots. `service.inspect_run(run_id)` additionally recovers interrupted state under the execution guard, without provider calls or another target attempt.
 
-Target states are `PENDING`, `RUNNING`, `SELECTED`, `NO_SELECTION` and `FAILED`. A short committed transition to `RUNNING` consumes one complete target attempt before external work begins. Existing component retries do not increment that counter. A later explicit resume retries the full target pipeline for interrupted or failed work below the central maximum of three attempts; it skips `SELECTED`, `NO_SELECTION` and exhausted failures. Each invocation makes one pass, continuing to later Champions after target-local failure. Unexpected target-local errors become sanitized failure codes; unsafe run/catalog storage failures abort explicitly.
+Target states are `PENDING`, `RUNNING`, `SELECTED`, `INTEGRATED`, `NO_SELECTION` and `FAILED`. A short committed transition to `RUNNING` consumes one target attempt before active work begins. Normal discovery through Bronze and registration uses one attempt total. Registration-only recovery on a later resume consumes another attempt from the same central maximum of three; component retries do not increment it. `SELECTED` is intermediate. `INTEGRATED` and `NO_SELECTION` are terminal. Each invocation makes one pass, continuing to later Champions after target-local failure. Unexpected target-local errors become sanitized failure codes; unsafe run/catalog storage failures abort explicitly.
 
-Run status is `ACTIVE`, `RESUMABLE`, `COMPLETED` or `COMPLETED_WITH_FAILURES`. Completion requires all original targets to be selected, normally unselected, or retry-exhausted; retryable failures keep the run resumable. Summaries derive counts from persisted targets. A stored `ACTIVE` after process death is not proof of a live executor: inspection/resume recovers stale `RUNNING` as `FAILED / ORCHESTRATION / INTERRUPTED` without increasing its existing count. An interrupted third attempt is exhausted.
+Run status is `ACTIVE`, `RESUMABLE`, `COMPLETED` or `COMPLETED_WITH_FAILURES`. `COMPLETED` requires every original target to be `INTEGRATED` or `NO_SELECTION`; all-terminal outcomes containing exhausted technical failures produce `COMPLETED_WITH_FAILURES`. Pending, retryable or unresolved selected work keeps the run resumable. Summaries include separate `integrated` and intermediate `selected` counts. Summaries derive counts from persisted targets. A stored `ACTIVE` after process death is not proof of a live executor: inspection/resume recovers stale `RUNNING` as `FAILED / ORCHESTRATION / INTERRUPTED` without increasing its existing count. An interrupted third attempt is exhausted for active processing. A selected identity is retained so an already completed durable integration can still be passively repaired.
 
-A small nonblocking local OS guard prevents overlapping invocations against the same run database and releases on process exit; contention raises `RunBusyError`. Keep the database and guard on a local filesystem and do not delete the `.lock` file while in use. It is not a lease, heartbeat, distributed lock or SQLite transaction. Provider calls hold no run-state SQL transaction. A crash after external success but before result commit may cause repeated external work, within the same attempt budget; identical later selection is not guaranteed.
+A small nonblocking local OS guard prevents overlapping invocations against the same run database and releases on process exit; contention raises `RunBusyError`. Keep the database and guard on a local filesystem and do not delete the `.lock` file while in use. It is not a lease, heartbeat, distributed lock or SQLite transaction. Provider calls hold no run-state SQL transaction. Before repeating acquisition, resume reconciles any persisted selected identity against Bronze and the catalog. Valid Bronze plus existing registration repairs the same source to `INTEGRATED` without provider calls, registration calls or another attempt, including at count three. Valid Bronze without registration requires a newly claimed registration-only attempt. Missing Bronze permits a new whole acquisition attempt only while budget remains. Corrupt/incompatible Bronze aborts explicitly instead of triggering rediscovery. An interrupted final run-state commit cannot cause a second source to be selected after durable integration.
 
-Run state persists selected video identity/method or no-selection/failure codes and timestamps, never transcript payloads or model responses. **SELECTED remains distinct from INTEGRATED**: this service never registers sources or writes Bronze. Full transient `SelectedSource` handoff to later Bronze work is a separate downstream responsibility; it cannot be reconstructed from the run database. Knowledge-change analytics, curation and scheduling remain outside this service.
+Run state persists selected video identity/method or no-selection/failure codes and timestamps, never transcript payloads or model responses. **SELECTED remains distinct from INTEGRATED**: the service commits `SELECTED`, passes the original in-memory `SelectedSource` and stored run/target context to Bronze, then commits `INTEGRATED` only after Bronze and registration succeed. Interrupted registration claims stay consumed; no fourth active attempt is allowed. The run database cannot reconstruct lost transcripts. Knowledge-change analytics, curation and scheduling remain outside this service.
+
+
+### Existing Bronze recovery
+
+`inspect_existing_bronze(video_id, catalog=..., config=...)` strictly validates canonical Bronze and reads registration state. It returns `None` only when both Bronze and registration are absent. It performs no writes or registration. `recover_existing_bronze(...)` revalidates existing Bronze, confirms durability and idempotently registers the source without the original `SelectedSource`, rewriting bytes or reconstructing provenance. Standalone callers must serialize recovery; the run service owns its bounded attempt claims before active recovery.
+
+### Explicit run-state migration
+
+Existing run schema v1 is rejected by normal initialization/use. With no executor running, explicitly migrate it using a separate new backup path:
+
+```python
+from league_knowledge_platform import migrate_run_repository_v1_to_v2
+
+state = migrate_run_repository_v1_to_v2(
+    ".state/acquisition-runs.sqlite3",
+    backup_path=".state/acquisition-runs-v1.backup.sqlite3",
+)
+```
+
+Migration validates the known v1 schema and original snapshots, creates and checks a non-overwriting SQLite backup, then transactionally copies targets into the extended schema and recreates their constraints/triggers. Failure rolls back schema/data changes; the verified backup remains available. Unknown/modified schemas fail explicitly, and existing backup files are never overwritten. This is a single supported migration, not an automatic database reset.
+
+Legacy `SELECTED` records retain their source identity, method and consumed attempts, become unresolved intermediate work, and use their previous outcome time as the selection timestamp. Previously completed runs containing them become resumable. Resume reconciles existing durable state or uses remaining budget; migration does not assume integration, reset counters or reconstruct transcripts. Catalog membership/provenance and snapshot hashes are preserved. Bronze and Source Catalog schema versions remain unchanged.
+
+Retain the backup. Reverting code and restoring it is suitable before new active processing; after new integrations, do not blindly restore an older progress database without accounting for the newer durable state.

@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from league_knowledge_platform import (
-    AcquisitionRunService, RunStatus, RunTargetStatus, SelectionConfig, SQLiteRunRepository,
+    BronzeConfig, AcquisitionRunService, RunStatus, RunTargetStatus, SelectionConfig, SQLiteRunRepository,
     YouTubeDiscovery, initialize_run_repository, initialize_source_catalog,
 )
 from run_fixtures import NOW, Captions, Discovery, Selection, process_environment, write_catalog
@@ -62,6 +62,7 @@ class RunIntegrationTests(unittest.TestCase):
 
     def service(self, **overrides):
         values = dict(discovery=Discovery(), catalog_reader=self.sources,
+                      bronze_config=BronzeConfig(self.root / "bronze"),
                       caption_provider=Captions(), selection_capability=Selection(),
                       selection_config=SelectionConfig(retry_delays_seconds=(0, 0)), clock=lambda: NOW)
         values.update(overrides)
@@ -70,20 +71,18 @@ class RunIntegrationTests(unittest.TestCase):
     def test_real_discovery_collection_ranking_caption_selection_persistence_and_resume(self):
         with closing(sqlite3.connect(self.sources.path)) as connection, connection:
             connection.execute("INSERT INTO integrated_sources VALUES (?,?)", ("integrated", NOW.isoformat()))
-        original_sources = self.sources.path.read_bytes()
+        original_ids = self.sources.load_integrated_ids()
         transport = FixtureTransport(self.repository.path)
         selection = Selection()
         captions = Captions(unavailable=("Aatrox_1", "Anivia_1", "Ahri_1"))
         service = self.service(discovery=YouTubeDiscovery(api_key="offline-key", transport=transport),
                                caption_provider=captions, selection_capability=selection)
-        with patch("socket.create_connection", side_effect=AssertionError("Live access forbidden")), \
-                patch("league_knowledge_platform.SQLiteSourceCatalog.register_integrated",
-                      side_effect=AssertionError("Registration forbidden")):
+        with patch("socket.create_connection", side_effect=AssertionError("Live access forbidden")):
             first = service.start_new_run(self.catalog)
-            self.assertEqual((first.status, first.selected, first.failed), (RunStatus.RESUMABLE, 2, 1))
+            self.assertEqual((first.status, first.integrated, first.failed), (RunStatus.RESUMABLE, 2, 1))
             self.catalog.unlink()
             second = service.resume_run(first.run_id)
-        self.assertEqual((second.status, second.selected, second.failed), (RunStatus.COMPLETED, 3, 0))
+        self.assertEqual((second.status, second.integrated, second.failed), (RunStatus.COMPLETED, 3, 0))
         self.assertEqual(transport.unlocked_calls, len(transport.calls))
         targets = self.repository.list_targets(first.run_id)
         self.assertEqual([t.attempt_count for t in targets], [2, 1, 1])
@@ -93,7 +92,7 @@ class RunIntegrationTests(unittest.TestCase):
             self.assertEqual(len(request.candidates), 2)
             self.assertNotIn("integrated", [c.video_id for c in request.candidates])
             self.assertTrue(all("Synthetic complete transcript" in c.transcript_text for c in request.candidates))
-        self.assertEqual(self.sources.path.read_bytes(), original_sources)
+        self.assertEqual(self.sources.load_integrated_ids(), original_ids | {"Ahri_0", "Aatrox_0", "Anivia_0"})
         self.assertNotIn(b"Synthetic complete transcript", self.repository.path.read_bytes())
         self.assertNotIn(b"offline-key", self.repository.path.read_bytes())
 
@@ -101,8 +100,9 @@ class RunIntegrationTests(unittest.TestCase):
         code = """
 import os, sys
 import sqlite3
+from pathlib import Path
 from league_knowledge_platform import (AcquisitionRunService, SQLiteRunRepository,
-    SQLiteSourceCatalog, SelectionConfig, RunTargetStatus)
+    SQLiteSourceCatalog, SelectionConfig, RunTargetStatus, BronzeConfig)
 from run_fixtures import Captions, Discovery, Selection, NOW
 phase, operation, database, sources, catalog = sys.argv[1:]
 if phase == 'before-running-commit':
@@ -122,14 +122,16 @@ class Repository(SQLiteRunRepository):
             assert kwargs['status'] is RunTargetStatus.SELECTED
             print('SELECTION_FINISHED', flush=True)
             os._exit(74)
-        super().finish_attempt(*args, **kwargs)
+        result = super().finish_attempt(*args, **kwargs)
         if phase == 'after-result':
             os._exit(75)
+        return result
 def interrupt(target):
     if phase == 'after-running':
         os._exit(73)
 service = AcquisitionRunService(Repository(database), discovery=Discovery(hook=interrupt),
     catalog_reader=SQLiteSourceCatalog(sources), caption_provider=Captions(),
+    bronze_config=BronzeConfig(Path(sources).parent / "bronze"),
     selection_capability=Selection(), selection_config=SelectionConfig(retry_delays_seconds=(0,0)),
     clock=lambda: NOW, id_factory=lambda:'crash-run')
 if operation == 'new':
@@ -152,7 +154,7 @@ else:
         service = self.service()
         self.catalog.unlink()
         result = service.resume_run("crash-run")
-        self.assertEqual((result.status, result.failed, result.selected),
+        self.assertEqual((result.status, result.failed, result.integrated),
                          (RunStatus.COMPLETED_WITH_FAILURES, 1, 2))
         self.assertEqual([t.id for t, _ in service.discovery.calls], ["Aatrox", "Anivia"])
         saved = self.repository.list_targets("crash-run")[0]
@@ -180,15 +182,15 @@ else:
         self.assertEqual([t.id for t, _ in service.discovery.calls], ["Ahri", "Aatrox", "Anivia"])
         self.assertEqual([t.attempt_count for t in self.repository.list_targets("crash-run")], [2, 1, 1])
 
-    def test_crash_after_result_commit_skips_completed_target_on_restart(self):
+    def test_crash_after_selected_commit_without_bronze_retries_target_on_restart(self):
         process = self.crash("after-result")
         self.assertEqual(process.returncode, 75, process.stderr)
         before = self.repository.list_targets("crash-run")[0]
         self.assertEqual(before.status, RunTargetStatus.SELECTED)
         service = self.service()
         self.assertEqual(service.resume_run("crash-run").status, RunStatus.COMPLETED)
-        self.assertEqual([t.id for t, _ in service.discovery.calls], ["Aatrox", "Anivia"])
-        self.assertEqual(self.repository.list_targets("crash-run")[0], before)
+        self.assertEqual([t.id for t, _ in service.discovery.calls], ["Ahri", "Aatrox", "Anivia"])
+        self.assertEqual(self.repository.list_targets("crash-run")[0].attempt_count, 2)
 
 
 if __name__ == "__main__":

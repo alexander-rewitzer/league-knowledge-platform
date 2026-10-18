@@ -86,6 +86,13 @@ class BronzeIntegrationResult:
     registered: bool
 
 
+@dataclass(frozen=True, slots=True)
+class ExistingBronzeState:
+    video_id: str
+    path: Path
+    registered: bool
+
+
 def canonical_bronze_path(video_id: str, config: BronzeConfig = DEFAULT_BRONZE_CONFIG) -> Path:
     _require_video_id(video_id)
     return Path(config.root).expanduser().resolve() / "youtube" / ("id-" + video_id.encode("ascii").hex() + ".json")
@@ -336,8 +343,59 @@ def _read_canonical(path, incoming, video_id):
         existing = decode_bronze_artifact(path.read_bytes())
     except BronzeContractError:
         raise BronzeIntegrityError(video_id, "existing_artifact_validation") from None
-    _require_compatible(existing, incoming, video_id)
+    if existing["source"]["video_id"] != video_id:
+        raise BronzeIntegrityError(video_id, "canonical_identity")
+    if incoming is not None:
+        _require_compatible(existing, incoming, video_id)
     return existing
+
+
+def inspect_existing_bronze(video_id: str, *, catalog: IntegratedSourceCatalog,
+                            config: BronzeConfig = DEFAULT_BRONZE_CONFIG) -> ExistingBronzeState | None:
+    """Read canonical material and catalog state; never write, flush, or register."""
+    path = canonical_bronze_path(video_id, config)
+    try:
+        exists = path.exists() or path.is_symlink()
+        if exists:
+            _read_canonical(path, None, video_id)
+        try:
+            registered = catalog.is_integrated(video_id)
+        except Exception:
+            raise BronzeRegistrationError(video_id, "catalog_inspection") from None
+        if type(registered) is not bool:
+            raise BronzeRegistrationError(video_id, "catalog_inspection_contract")
+        if registered and not exists:
+            raise BronzeIntegrityError(video_id, "registered_bronze_missing")
+        return ExistingBronzeState(video_id, path, registered) if exists else None
+    except BronzeError:
+        raise
+    except OSError:
+        raise BronzeFilesystemError(video_id, "existing_artifact") from None
+
+
+def recover_existing_bronze(video_id: str, *, catalog: IntegratedSourceCatalog,
+                            config: BronzeConfig = DEFAULT_BRONZE_CONFIG) -> BronzeIntegrationResult:
+    """Validate/flush existing canonical bytes, then register; never reconstruct or publish."""
+    path = canonical_bronze_path(video_id, config)
+    try:
+        _read_canonical(path, None, video_id)
+        filesystem.confirm_durable(path)
+        registered = _register(catalog, video_id)
+        return BronzeIntegrationResult(video_id, path, False, registered)
+    except BronzeError:
+        raise
+    except OSError:
+        raise BronzeFilesystemError(video_id, "existing_recovery") from None
+
+
+def _register(catalog, video_id):
+    try:
+        registered = catalog.register_integrated(video_id)
+    except Exception:
+        raise BronzeRegistrationError(video_id, "registration") from None
+    if type(registered) is not bool:
+        raise BronzeRegistrationError(video_id, "registration_contract")
+    return registered
 
 
 def integrate_selected_source(selected: SelectedSource, *, catalog: IntegratedSourceCatalog,
@@ -388,12 +446,7 @@ def integrate_selected_source(selected: SelectedSource, *, catalog: IntegratedSo
             _read_canonical(path, artifact, video_id)
         phase = "durability_confirmation"
         filesystem.confirm_durable(path)
-        try:
-            registered = catalog.register_integrated(video_id)
-        except Exception:
-            raise BronzeRegistrationError(video_id, "registration") from None
-        if type(registered) is not bool:
-            raise BronzeRegistrationError(video_id, "registration_contract")
+        registered = _register(catalog, video_id)
         return BronzeIntegrationResult(video_id, path, created, registered)
     except BronzeError:
         raise
