@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from contextlib import closing
+from datetime import timedelta
 import sqlite3
 import tempfile
 import unittest
@@ -47,6 +48,47 @@ class AcquisitionRunTests(unittest.TestCase):
         self.assertEqual(resumed, first)
         self.assertEqual(len(service.discovery.calls), 6)
         self.assertEqual(len(self.sources.load_integrated_ids()), 3)
+
+    def test_completed_noop_resumes_preserve_original_finalization(self):
+        current = NOW
+        service = self.service(clock=lambda: current)
+        original = service.start_new_run(self.path)
+        finished = self.repository.get_run(original.run_id).finished_at_utc
+        targets = self.repository.list_targets(original.run_id)
+        self.assertEqual(finished, NOW)
+        provider_calls = len(service.discovery.calls)
+
+        for hours in (1, 2):
+            current = NOW + timedelta(hours=hours)
+            self.assertEqual(service.resume_run(original.run_id), original)
+            self.assertEqual(self.repository.get_run(original.run_id).finished_at_utc, finished)
+            self.assertEqual(self.repository.list_targets(original.run_id), targets)
+        current = NOW + timedelta(hours=3)
+        self.assertEqual(service.inspect_run(original.run_id), original)
+        self.assertEqual(self.repository.get_run(original.run_id).finished_at_utc, finished)
+        self.assertEqual(len(service.discovery.calls), provider_calls)
+
+    def test_completed_with_failures_noop_resumes_preserve_original_finalization(self):
+        discovery = Discovery({"Ahri": [DiscoveryError(DiscoveryFailureKind.TIMEOUT, "fixture timeout")] * 3})
+        current = NOW
+        service = self.service(discovery=discovery, clock=lambda: current)
+        first = service.start_new_run(self.path)
+        self.assertEqual(first.status, RunStatus.RESUMABLE)
+        for hours in (1, 2):
+            current = NOW + timedelta(hours=hours)
+            final = service.resume_run(first.run_id)
+        self.assertEqual(final.status, RunStatus.COMPLETED_WITH_FAILURES)
+        finished = self.repository.get_run(first.run_id).finished_at_utc
+        targets = self.repository.list_targets(first.run_id)
+        self.assertEqual(finished, NOW + timedelta(hours=2))
+        provider_calls = len(discovery.calls)
+
+        for hours in (3, 4):
+            current = NOW + timedelta(hours=hours)
+            self.assertEqual(service.resume_run(first.run_id), final)
+            self.assertEqual(self.repository.get_run(first.run_id).finished_at_utc, finished)
+            self.assertEqual(self.repository.list_targets(first.run_id), targets)
+        self.assertEqual(len(discovery.calls), provider_calls)
 
     def test_explicit_unknown_resume_never_creates_or_loads_a_catalog(self):
         service = self.service()

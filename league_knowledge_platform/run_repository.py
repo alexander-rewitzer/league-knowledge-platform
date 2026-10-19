@@ -198,6 +198,12 @@ def _summary(run, targets):
                       counts[RunTargetStatus.INTEGRATED])
 
 
+def _target_outcome(target):
+    """Domain result fields; operational timestamps do not change the result."""
+    return (target.status, target.selected_video_id, target.selection_method,
+            target.no_selection_reason, target.failure)
+
+
 class SQLiteRunRepository:
     """Construction has no filesystem effects. Initialize explicitly before service use.
 
@@ -358,12 +364,16 @@ class SQLiteRunRepository:
             )
             self._load(connection, run_id)
 
-    def _settle(self, connection, run, targets, now, *, closing):
+    def _settle(self, connection, run, targets, now, *, closing, material_outcome_changed=False):
         if all(t.terminal for t in targets):
             status = (RunStatus.COMPLETED_WITH_FAILURES
                       if any(t.status is RunTargetStatus.FAILED for t in targets)
                       else RunStatus.COMPLETED)
-            finished = now.isoformat()
+            prior_final = run.status in (RunStatus.COMPLETED, RunStatus.COMPLETED_WITH_FAILURES)
+            if prior_final and status is run.status and not material_outcome_changed:
+                finished = run.finished_at_utc.isoformat()
+            else:
+                finished = now.isoformat()
         else:
             status = RunStatus.RESUMABLE if closing else RunStatus.ACTIVE
             finished = None
@@ -421,7 +431,8 @@ class SQLiteRunRepository:
         if changed != 1:
             raise RunStateError("Transition did not update exactly one target")
         current = tuple(updated if t.target.id == original.target.id else t for t in targets)
-        self._settle(connection, run, current, now, closing=False)
+        self._settle(connection, run, current, now, closing=False,
+                     material_outcome_changed=_target_outcome(original) != _target_outcome(updated))
         return updated
 
     def begin_attempt(self, run_id: str, champion_id: str, now: datetime, *,

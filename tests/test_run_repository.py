@@ -14,7 +14,7 @@ from league_knowledge_platform import (
     NoSelectionReason, SQLiteRunRepository, TargetFailure, TargetFailureKind,
     initialize_run_repository, initialize_source_catalog, load_catalog,
 )
-from run_fixtures import NOW, write_catalog
+from run_fixtures import CHAMPIONS, NOW, write_catalog
 
 
 class RunRepositoryTests(unittest.TestCase):
@@ -128,6 +128,60 @@ class RunRepositoryTests(unittest.TestCase):
         self.assertFalse(saved.terminal)
         with self.assertRaises(RunStateError):
             self.repository.begin_attempt("run-one", "Ahri", NOW)
+
+    def test_first_completion_uses_material_settlement_not_later_invocation_close(self):
+        run_id = self.create()
+        for index, champion in enumerate(self.catalog.targets):
+            started = NOW + timedelta(minutes=index * 10)
+            self.repository.activate_run(run_id, started)
+            attempt = self.repository.begin_attempt(run_id, champion.id, started)
+            finished = started + timedelta(minutes=1)
+            self.repository.finish_attempt(run_id, champion.id, attempt.attempt_count, finished,
+                                           status=RunTargetStatus.NO_SELECTION,
+                                           no_selection_reason=NoSelectionReason.NO_TRANSCRIPTS)
+        first_final = self.repository.get_run(run_id)
+        self.assertEqual(first_final.status, RunStatus.COMPLETED)
+        self.assertEqual(first_final.finished_at_utc, finished)
+        summary = self.repository.finish_invocation(run_id, finished + timedelta(hours=1))
+        self.assertEqual(summary.status, RunStatus.COMPLETED)
+        self.assertEqual(self.repository.get_run(run_id).finished_at_utc, finished)
+
+    def test_operational_target_timestamps_alone_do_not_refinalize(self):
+        catalog = load_catalog(write_catalog(self.root / "single.json", CHAMPIONS[:1]))
+        self.repository.create_run("single", catalog, NOW)
+        for number in (1, 2, 3):
+            at = NOW + timedelta(minutes=number)
+            self.repository.activate_run("single", at)
+            attempt = self.repository.begin_attempt("single", "Ahri", at)
+            if number < 3:
+                self.repository.finish_attempt("single", "Ahri", attempt.attempt_count, at,
+                                               status=RunTargetStatus.FAILED,
+                                               failure=TargetFailure(RunStage.DISCOVERY,
+                                                                     TargetFailureKind.TIMEOUT))
+            else:
+                self.repository.finish_attempt(
+                    "single", "Ahri", attempt.attempt_count, at, status=RunTargetStatus.SELECTED,
+                    selected_video_id="AhriVideo",
+                    selection_method=SelectionMethod.ONLY_PASSING_CANDIDATE,
+                )
+        failure = TargetFailure(RunStage.SOURCE_REGISTRATION, TargetFailureKind.REGISTRATION)
+        first_final_time = NOW + timedelta(minutes=4)
+        self.repository.fail_integration("single", "Ahri", 3, "AhriVideo", first_final_time, failure)
+        before = self.repository.summary("single")
+        self.assertEqual(before.status, RunStatus.COMPLETED_WITH_FAILURES)
+        self.repository.fail_integration("single", "Ahri", 3, "AhriVideo",
+                                         first_final_time + timedelta(minutes=1), failure)
+        self.assertEqual(self.repository.summary("single"), before)
+        self.assertEqual(self.repository.get_run("single").finished_at_utc, first_final_time)
+        self.assertEqual(self.repository.list_targets("single")[0].updated_at_utc,
+                         first_final_time + timedelta(minutes=1))
+        changed_failure = TargetFailure(RunStage.BRONZE_PERSISTENCE, TargetFailureKind.FILESYSTEM)
+        changed_time = first_final_time + timedelta(minutes=2)
+        self.repository.fail_integration("single", "Ahri", 3, "AhriVideo",
+                                         changed_time, changed_failure)
+        self.assertEqual(self.repository.summary("single"), before)
+        self.assertEqual(self.repository.get_run("single").finished_at_utc, changed_time)
+        self.assertEqual(self.repository.list_targets("single")[0].failure, changed_failure)
 
     def test_result_transaction_rolls_back_without_false_success(self):
         self.create()
