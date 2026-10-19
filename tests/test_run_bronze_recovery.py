@@ -2,6 +2,7 @@
 
 from contextlib import closing
 from copy import deepcopy
+from datetime import timedelta
 import json
 from pathlib import Path
 import sqlite3
@@ -33,11 +34,12 @@ class RunBronzeRecoveryTests(unittest.TestCase):
         self.sources = initialize_source_catalog(self.root / "sources.sqlite3")
         self.config = BronzeConfig(self.root / "bronze")
 
-    def service(self):
+    def service(self, *, clock=None):
         return AcquisitionRunService(
             self.repository, discovery=Discovery(), catalog_reader=self.sources,
             caption_provider=Captions(), selection_capability=Selection(), bronze_config=self.config,
-            selection_config=SelectionConfig(retry_delays_seconds=(0, 0)), clock=lambda: NOW,
+            selection_config=SelectionConfig(retry_delays_seconds=(0, 0)),
+            clock=clock if clock is not None else (lambda: NOW),
             id_factory=lambda: "run",
         )
 
@@ -68,8 +70,8 @@ class RunBronzeRecoveryTests(unittest.TestCase):
         self.repository.finish_invocation("run", NOW)
         return selected
 
-    def resume_without_pipeline(self):
-        service = self.service()
+    def resume_without_pipeline(self, *, clock=None):
+        service = self.service(clock=clock)
         with patch.object(service, "_process_target", side_effect=AssertionError("Unexpected acquisition")):
             summary = service.resume_run("run")
         self.assertFalse(service.discovery.calls)
@@ -153,9 +155,49 @@ class RunBronzeRecoveryTests(unittest.TestCase):
             self.assertEqual(register.call_count, 2)
         self.assertNotIn(b"secret failure", self.repository.path.read_bytes())
         # An externally completed registration can still repair an exhausted projection.
+        first_final = self.repository.get_run("run").finished_at_utc
+        self.assertEqual(first_final, NOW)
         self.sources.register_integrated("AhriVideo")
-        self.assertEqual(self.resume_without_pipeline().status, RunStatus.COMPLETED)
+        repair_time = NOW + timedelta(hours=3)
+        times = iter(NOW + timedelta(hours=hours) for hours in (1, 2, 3, 4))
+        repaired = self.resume_without_pipeline(clock=lambda: next(times))
+        self.assertEqual(repaired.status, RunStatus.COMPLETED)
+        self.assertEqual(self.repository.get_run("run").finished_at_utc, repair_time)
         self.assertEqual(self.row().attempt_count, 3)
+        self.assertEqual(self.resume_without_pipeline(clock=lambda: NOW + timedelta(hours=5)), repaired)
+        self.assertEqual(self.repository.get_run("run").finished_at_utc, repair_time)
+
+    def test_passive_repair_refinalizes_when_other_exhausted_failure_remains(self):
+        self.catalog_path = write_catalog(self.root / "catalog.json", CHAMPIONS[:2])
+        self.catalog = load_catalog(self.catalog_path)
+        self.seed_selected(count=3, bronze=True)
+        for _ in range(3):
+            self.repository.activate_run("run", NOW)
+            attempt = self.repository.begin_attempt("run", "Aatrox", NOW)
+            self.repository.finish_attempt(
+                "run", "Aatrox", attempt.attempt_count, NOW, status=RunTargetStatus.FAILED,
+                failure=TargetFailure(RunStage.DISCOVERY, TargetFailureKind.TIMEOUT),
+            )
+        self.repository.fail_integration(
+            "run", "Ahri", 3, "AhriVideo", NOW,
+            TargetFailure(RunStage.SOURCE_REGISTRATION, TargetFailureKind.REGISTRATION),
+        )
+        before = self.repository.summary("run")
+        self.assertEqual((before.status, before.failed), (RunStatus.COMPLETED_WITH_FAILURES, 2))
+        self.assertEqual(self.repository.get_run("run").finished_at_utc, NOW)
+
+        self.sources.register_integrated("AhriVideo")
+        repair_time = NOW + timedelta(hours=3)
+        times = iter(NOW + timedelta(hours=hours) for hours in (1, 2, 3, 4))
+        repaired = self.resume_without_pipeline(clock=lambda: next(times))
+        self.assertEqual((repaired.status, repaired.failed, repaired.integrated),
+                         (RunStatus.COMPLETED_WITH_FAILURES, 1, 1))
+        self.assertEqual(self.repository.get_run("run").finished_at_utc, repair_time)
+        targets = self.repository.list_targets("run")
+        self.assertEqual([(target.status, target.attempt_count) for target in targets],
+                         [(RunTargetStatus.INTEGRATED, 3), (RunTargetStatus.FAILED, 3)])
+        self.assertEqual(self.resume_without_pipeline(clock=lambda: NOW + timedelta(hours=5)), repaired)
+        self.assertEqual(self.repository.get_run("run").finished_at_utc, repair_time)
 
     def test_exhausted_selected_without_registration_never_activates_recovery(self):
         self.seed_selected(count=3, bronze=True)
