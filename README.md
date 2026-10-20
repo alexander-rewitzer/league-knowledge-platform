@@ -86,7 +86,7 @@ An additional source does not necessarily contribute useful new knowledge. Plann
 
 ## Current Implementation
 
-The repository implements end-to-end Source Acquisition through transient selection, resumable progress, durable Bronze and source registration:
+The repository implements end-to-end Source Acquisition through transient selection, resumable progress, durable Bronze and source registration, plus explicit deterministic cleaning of persisted Bronze into Silver:
 
 | Implemented capability | Repository evidence |
 | --- | --- |
@@ -94,6 +94,7 @@ The repository implements end-to-end Source Acquisition through transient select
 | Automated YouTube candidate discovery with metadata and continuation cursors | [Discovery](league_knowledge_platform/youtube.py) |
 | Persistent SQLite lookup and idempotent registration of successfully integrated source IDs | [Source catalog](league_knowledge_platform/source_catalog.py) |
 | Immutable selected-source Bronze JSON, exact segment timing, original provenance and post-persistence registration | [Bronze integration](league_knowledge_platform/bronze.py), [local publication](league_knowledge_platform/_bronze_filesystem.py) |
+| Deterministic NFC/whitespace transcript cleaning, versioned canonical Silver, exact Bronze provenance and atomic publication | [Silver cleaning](league_knowledge_platform/silver.py), [API](#silver-transcript-cleaning) |
 | Unseen-source filtering, refill, immutable integrated-ID snapshot, and cross-page deduplication preserving first-seen order | [Collection](league_knowledge_platform/unseen.py) |
 | Deterministic popularity/recency ranking, explicit reference time, and configurable duration eligibility through central defaults | [Ranking](league_knowledge_platform/ranking.py), [defaults](league_knowledge_platform/defaults.py) |
 | Transient acquisition of timestamped English YouTube captions, manual-English preference, and provider failure handling | [Acquisition](league_knowledge_platform/transcripts.py), [provider adapter](league_knowledge_platform/youtube_caption_provider.py) |
@@ -106,7 +107,7 @@ Collection returns at most 20 unique unseen candidates. Duration is an eligibili
 
 The run service invokes the Bronze integration API with the original in-memory selected source. Bronze persistence and validation precede catalog registration and the final run-state commit. Discovery, ranking, transcript acquisition and semantic selection do not persist their transient candidates.
 
-The platform as a whole remains in development. Silver processing, agentic curation, the Deterministic Writer, Gold storage, and retrieval indexing are planned, not delivered functionality. The fixed-size baseline and comparative evaluation are also not implemented. Implemented acquisition and its offline tests do not demonstrate live provider availability, semantic model quality, or the research hypothesis.
+The platform as a whole remains in development. Silver logical segmentation, agentic curation, the Deterministic Writer, Gold storage, and retrieval indexing remain planned. Silver cleaning is a separate explicit operation, not part of acquisition-run orchestration. The fixed-size baseline and comparative evaluation are also not implemented. Implemented acquisition and its offline tests do not demonstrate live provider availability, semantic model quality, or the research hypothesis.
 
 ## Planned Agentic Knowledge Curation
 
@@ -165,7 +166,8 @@ See [V1 scope](docs/scope.md), [architecture](docs/architecture.md), and the [ar
 | Implemented | Champion targets, discovery, integrated-source lookup, unseen collection, ranking, transient transcripts, absolute quality assessment, deterministic gating, conditional comparison, and resumable acquisition runs with offline tests |
 | In development | Knowledge Platform overall; acquisition components exist, but the full acquisition/curation pipeline is incomplete |
 | Implemented | Selected-source Bronze persistence, post-persistence registration, run integration and offline crash-recovery tests |
-| Planned next | Source-faithful Silver processing |
+| Implemented | Deterministic source-faithful Silver cleaning with durable versioned artifacts |
+| Planned next | Source-faithful logical segmentation of cleaned Silver transcripts |
 | Planned subsequent | Validated agentic curation, Deterministic Writer, canonical Gold, incremental retrieval index, and raw knowledge-change metrics |
 | Planned evaluation | Fixed-size baseline, query-time comparison, and quality/efficiency/preparation measurements |
 
@@ -310,6 +312,33 @@ Provide `DEEPSEEK_API_KEY` through the environment or explicit runtime injection
 | `SelectionFailed` / `SELECTION_FAILED` | Technical/model failure prevented selection; no winner is returned. |
 
 The selection service owns retries: at most three total attempts per semantic stage reuse unchanged inputs. A comparative-stage failure does not repeat successful quality assessment or restart discovery, collection, ranking, or transcript acquisition. The outputs and assessments remain transient, with no Bronze writes or source-catalog mutation. Offline domain, synthetic HTTP, and ranker/caption/selection integration tests are included in the existing test command. Installing both optional requirements files includes the caption and selection adapter coverage; without their respective dependencies, those adapter tests explicitly skip.
+
+## Silver transcript cleaning
+
+`clean_bronze_source` reads one canonical Bronze artifact and explicitly publishes one canonical Silver cleaned transcript. It does not invoke acquisition, an LLM, a provider, the source catalog or the run database. Serialize cleaning calls and configure non-overlapping Bronze and Silver roots.
+
+```python
+from league_knowledge_platform import BronzeConfig, SilverConfig, clean_bronze_source
+
+result = clean_bronze_source(
+    "existing-video-id",  # Use the video ID of an existing canonical Bronze source.
+    bronze_config=BronzeConfig(root="data/bronze"),
+    silver_config=SilverConfig(root="data/silver"),
+)
+print(result.video_id, result.path, result.created)
+```
+
+The central non-secret `SILVER_ROOT` default is `data/silver`. Silver reuses Bronze's source-centric filename encoding: `youtube/id-<lowercase ASCII hex>.json`. Runtime artifacts are ignored by Git. Neither target nor run context changes source identity.
+
+Cleaning applies exactly `unicodedata.normalize("NFC", source_text)` followed by `" ".join(normalized.split())` to every Bronze segment's original `source_text`. This normalizes whitespace to ordinary spaces, collapses runs and trims boundaries. Repetitions, unusual wording, advertisements, sponsor passages and filler remain. No paraphrasing, punctuation invention, semantic filtering or logical segmentation occurs.
+
+Silver JSON has `schema_version: 1`, `cleaning`, `source`, `bronze`, `acquisition` and `transcript` sections. It copies source/acquisition/track metadata unchanged and retains every segment's original `source_index` and exact decimal timing strings. Empty cleaned segments remain in place; full text joins nonempty segment texts with one space. Raw text and selection assessments remain in immutable Bronze, referenced by canonical relative path and the SHA-256 of its exact bytes.
+
+`cleaning.rule_version: 1` defines the cleaning rules. `cleaning.unicode_version` records informational runtime provenance only: a different Unicode version alone never makes equivalent Silver incompatible. Reprocessing validates the complete artifact and compares all material fields with the result derived from canonical Bronze, excluding only this diagnostic value. Compatible artifacts retain their original bytes and metadata. Material differences or unsupported schema/rule versions fail explicitly without replacement. A future material normalization change requires an explicit new cleaning-rule version; it must not silently redefine version 1.
+
+`decode_silver_artifact` and `validate_silver_artifact` validate the standalone contract. `validate_silver_against_bronze` additionally checks actual derivation and provenance against Bronze. The cleaned artifact contains the complete text, source context, segment order and timing needed by future logical segmentation without another content input. It does not itself create logical sections or knowledge items.
+
+Writes use sibling staging, flushing, validation and non-overwriting atomic publication. Interrupted temporary files are never promoted as valid results. An interruption after publication can leave a complete canonical artifact that is validated and reused on retry. Bronze is read-only throughout; no source registration or run-state transition occurs. Errors distinguish invalid Bronze input, Silver contract failures, integrity conflicts and filesystem failures without including transcript contents.
 
 ## Selected-source Bronze integration
 

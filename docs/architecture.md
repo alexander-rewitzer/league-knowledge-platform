@@ -4,12 +4,12 @@ The Knowledge Platform is the acquisition and preparation side of an experiment 
 
 ## V1 acquisition and compilation flow
 
-The architecture has three separate views. Source Acquisition integrates selected transient sources into Bronze through resumable orchestration; the downstream curation and comparative experiment remain planned. These views preserve the existing Bronze/Silver/Gold responsibilities and local-first design.
+The architecture has three separate views. Source Acquisition integrates selected transient sources into Bronze through resumable orchestration. Explicit deterministic Silver cleaning is implemented at the persisted artifact boundary; logical segmentation, downstream curation and the comparative experiment remain planned. These views preserve the existing Bronze/Silver/Gold responsibilities and local-first design.
 
 | View | Current status |
 | --- | --- |
 | [Source Acquisition](#source-acquisition) | Implemented target loading, discovery, integrated-ID lookup, filtering/refill, metadata ranking, transient transcripts, absolute quality assessment, deterministic gating, conditional comparison, and run-integrated Bronze persistence/registration |
-| [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Planned Silver processing, extraction, external validation, existing-knowledge inspection, integration, deterministic writing, and Gold |
+| [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Implemented Silver cleaning; planned logical segmentation, extraction, external validation, existing-knowledge inspection, integration, deterministic writing, and Gold |
 | [Experimental Evaluation](#planned-comparative-evaluation) | Planned fixed-size baseline and quality/query-time-efficiency comparison |
 
 Manually initiated sequential run orchestration is implemented through Bronze persistence and source registration, with its own SQLite progress database and immutable target snapshots. The integrated-source catalog remains separate. Run progress coordinates the existing Bronze API but remains separate from artifact storage. Curation and other future operational SQL responsibilities remain planned; the platform is not yet a completed acquisition/curation system.
@@ -59,12 +59,18 @@ Each semantic stage permits at most three total attempts for recoverable failure
 
 ## Knowledge layers and curator
 
-Bronze persistence is implemented and invoked directly by acquisition runs. Silver and the curator responsibilities below remain planned. The intended curator comprises logical Knowledge Extraction and Knowledge Integration stages followed by a Deterministic Writer. Extraction progresses through SEGMENT, VALIDATE, EXTRACT, VALIDATE, AUDIT/REFINE, and VALIDATE to Knowledge Items. Structured artifacts pass explicit validation gates; failures return corrective feedback to the agent before progression. Integration inspects existing Gold and proposes governed changes; deterministic code applies validated, approved changes. This staged explanation preserves the existing curator boundary and does not establish a new runtime implementation or artifact schema. See [planned curation](../README.md#planned-agentic-knowledge-curation).
+Bronze persistence is implemented and invoked directly by acquisition runs. A separate [Silver cleaning API](../README.md#silver-transcript-cleaning) reads canonical Bronze, applies only NFC/whitespace normalization and publishes a versioned canonical cleaned transcript. It preserves every existing segment's index, order and timing, including segments whose cleaned text is empty. No semantic advertisement/noise removal, synthesis or logical segmentation occurs. No provider calls or database changes are needed; acquisition-run orchestration does not invoke cleaning automatically.
+
+Silver includes source, acquisition and track metadata, plus the canonical relative Bronze reference and SHA-256 of the exact input bytes. Strict validation and material comparison make compatible repeats byte-preserving; conflicts fail without replacement. Schema and cleaning-rule versions are explicit. Runtime Unicode version is diagnostic provenance only and cannot independently reject equivalent content. Future material normalization changes require an explicit cleaning-rule version change. Staging and non-overwriting atomic publication reuse the local filesystem mechanisms; Bronze remains read-only.
+
+Logical segmentation and the curator responsibilities below remain planned. The intended curator comprises logical Knowledge Extraction and Knowledge Integration stages followed by a Deterministic Writer. Extraction progresses through SEGMENT, VALIDATE, EXTRACT, VALIDATE, AUDIT/REFINE, and VALIDATE to Knowledge Items. Structured artifacts pass explicit validation gates; failures return corrective feedback to the agent before progression. Integration inspects existing Gold and proposes governed changes; deterministic code applies validated, approved changes. This staged explanation preserves the existing curator boundary and does not establish a new curator runtime implementation or schema. See [planned curation](../README.md#planned-agentic-knowledge-curation).
 
 ```mermaid
 flowchart TD
-    S["Persisted Bronze Source"] --> B["Planned Silver Transcript Processing"]
-    B --> E["Planned Agentic Knowledge Extraction"]
+    S["Persisted Bronze Source"] --> B["Deterministic NFC and Whitespace Cleaning"]
+    B --> SC["Durable Silver Cleaned Transcript"]
+    SC --> LS["Planned Logical Source-Faithful Segmentation"]
+    LS --> E["Planned Agentic Knowledge Extraction"]
     E --> V["External Validation and Corrective Feedback"]
     V -- "Needs correction" --> E
     V -- "Validated Knowledge Items" --> K["Existing-Knowledge Inspection"]
@@ -79,7 +85,7 @@ flowchart TD
 | Component | Responsibility | Durable output |
 | --- | --- | --- |
 | Bronze | Retain only the admitted source's raw transcript and available provenance. | Selected source material and source identity. |
-| Silver | Remove reliably identifiable noise, clean and segment faithfully, and retain timestamps and deterministic provenance. | Source-aligned logical sections without synthesized knowledge or semantic chunk labels. |
+| Silver | Implemented deterministic NFC/whitespace cleaning with original order, indices, timing and Bronze provenance; logical source-faithful segmentation remains planned. | Versioned cleaned-transcript artifacts; future logical sections without synthesized knowledge or semantic labels. |
 | Knowledge Curator | Process one Silver source at a time after inspecting relevant existing Gold knowledge. | Governed changes or a recorded no-change outcome. |
 | Gold | Maintain current structured League knowledge in an adaptive, versioned Markdown Knowledge Wiki. | Canonical knowledge with provenance and visible contradictions. |
 

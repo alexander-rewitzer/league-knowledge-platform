@@ -37,3 +37,4 @@ MAX_TARGET_ATTEMPTS: Final = 3
 RUN_STATE_TIMEOUT_SECONDS: Final = 5.0
 
 BRONZE_ROOT: Final = "data/bronze"
+SILVER_ROOT: Final = "data/silver"
