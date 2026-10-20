@@ -55,8 +55,20 @@ from .run_lock import RunBusyError
 from .run_repository import (RUN_STATE_SCHEMA_VERSION, SQLiteRunRepository, initialize_run_repository,
                              migrate_run_repository_v1_to_v2)
 from .acquisition_runs import AcquisitionRunService
+from .silver import (
+    SILVER_SCHEMA_VERSION, SILVER_CLEANING_RULE_VERSION, DEFAULT_SILVER_CONFIG,
+    SilverConfig, SilverCleaningResult, SilverError, SilverInputError,
+    SilverContractError, SilverIntegrityError, SilverFilesystemError,
+    canonical_silver_path, clean_bronze_source, construct_silver_artifact,
+    decode_silver_artifact, validate_silver_artifact, validate_silver_against_bronze,
+)
 
 __all__ = [
+    "SILVER_SCHEMA_VERSION", "SILVER_CLEANING_RULE_VERSION", "DEFAULT_SILVER_CONFIG",
+    "SilverConfig", "SilverCleaningResult", "SilverError", "SilverInputError",
+    "SilverContractError", "SilverIntegrityError", "SilverFilesystemError",
+    "canonical_silver_path", "clean_bronze_source", "construct_silver_artifact",
+    "decode_silver_artifact", "validate_silver_artifact", "validate_silver_against_bronze",
     "BRONZE_SCHEMA_VERSION", "DEFAULT_BRONZE_CONFIG", "BronzeConfig", "BronzeContractError",
     "BronzeError", "BronzeFilesystemError", "BronzeIntegrationContext", "BronzeIntegrationResult",
     "BronzeIntegrityError", "BronzeRegistrationError", "ExistingBronzeState", "IntegratedSourceCatalog",

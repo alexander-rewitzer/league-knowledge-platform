@@ -32,16 +32,20 @@ def sync_directory(directory: Path) -> None:
         os.close(descriptor)
 
 
-def cleanup_temporary_files(directory: Path, encoded_id: str) -> None:
+def cleanup_temporary_files(directory: Path, encoded_id: str, *, namespace: str = "bronze") -> None:
     """Only for a caller-serialized retry; never remove a canonical JSON path."""
-    pattern = re.compile(r"\.bronze-tmp-" + re.escape(encoded_id) + r"-[0-9a-f]{32}\.tmp\Z")
+    if namespace not in ("bronze", "silver"):
+        raise ValueError("Unsupported artifact namespace")
+    pattern = re.compile(r"\." + namespace + "-tmp-" + re.escape(encoded_id) + r"-[0-9a-f]{32}\.tmp\Z")
     for path in directory.iterdir():
         if pattern.fullmatch(path.name) and path.is_file() and not path.is_symlink():
             path.unlink()
 
 
-def stage(directory: Path, encoded_id: str, content: bytes) -> Path:
-    path = directory / f".bronze-tmp-{encoded_id}-{uuid4().hex}.tmp"
+def stage(directory: Path, encoded_id: str, content: bytes, *, namespace: str = "bronze") -> Path:
+    if namespace not in ("bronze", "silver"):
+        raise ValueError("Unsupported artifact namespace")
+    path = directory / f".{namespace}-tmp-{encoded_id}-{uuid4().hex}.tmp"
     descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0), 0o600)
     try:
         with os.fdopen(descriptor, "wb") as handle:

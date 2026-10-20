@@ -1,5 +1,6 @@
 /.state/
 /data/bronze/
+/data/silver/
 __pycache__/
 *.py[cod]
 /.env
