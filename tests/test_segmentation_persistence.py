@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import replace
+from decimal import localcontext
 from hashlib import sha256
 import json
 import os
@@ -103,6 +104,26 @@ class SegmentationPersistenceTests(unittest.TestCase):
             self.assertFalse(second.created)
             self.assertEqual(second.artifact, first.artifact)
             self.assertEqual(self.silver_path.read_bytes(), before)
+        finally:
+            self.silver_path.write_bytes(self.before_silver)
+
+    def test_persisted_result_reloads_and_reuses_across_decimal_contexts_without_inference(self):
+        self.silver["transcript"]["segments"][0].update(start_seconds="1E+4", duration_seconds="0")
+        self.silver_path.write_bytes(bronze_bytes(self.silver))
+        try:
+            with localcontext() as context:
+                context.capitals = 0
+                first = self.process(self.fake())
+            before = self.path.read_bytes()
+            for capitals in (1, 0):
+                with localcontext() as context:
+                    context.capitals = capitals
+                    self.assertEqual(load_segmentation_artifact("A", silver_config=self.silver_config,
+                                                               config=self.config), first.artifact)
+                    reused = self.process()
+                    self.assertFalse(reused.created)
+                    self.assertEqual(reused.artifact, first.artifact)
+            self.assertEqual(self.path.read_bytes(), before)
         finally:
             self.silver_path.write_bytes(self.before_silver)
 

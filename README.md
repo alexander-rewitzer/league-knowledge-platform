@@ -362,7 +362,7 @@ if result.outcome is SegmentationOutcome.SEGMENTED:
 
 The LLM sees only language, the complete ordered segment indices/text and application-generated validation feedback. It returns contiguous endpoint ranges and exactly CONTENT or ADVERTISEMENT, without authoritative text, titles or summaries. Deterministic validation enforces complete exactly-once coverage of the actual sequence, including index gaps, empty segments, repetition and ads. Application code derives section text from Silver and retains exact constituent timing. Section intervals enclose all member starts/ends, including overlapping or nonchronological captions.
 
-Clear sponsor/promotion passages may be ADVERTISEMENT; mixed substantive/promotional or ambiguous material must be CONTENT. Intros, repetition, commentary and low-density explanation are not advertisements merely for appearing less useful. Semantic coherence and classification remain model judgments, not facts proven by structural validation. Ads remain durably stored; `content_sections` returns a separate copied CONTENT view for later extraction.
+Clear sponsor/promotion passages may be ADVERTISEMENT; mixed substantive/promotional or ambiguous material must be CONTENT. Intros, repetition, commentary and low-density explanation are not advertisements merely for appearing less useful. Semantic coherence and classification remain model judgments, not facts proven by structural validation. Ads remain durably stored; `content_sections` returns a separate copied CONTENT view for later extraction. Each returned section includes its `source`, `silver`, `bronze` and `acquisition` context, so its identity and upstream provenance remain available independently of the parent artifact.
 
 ```mermaid
 flowchart TD

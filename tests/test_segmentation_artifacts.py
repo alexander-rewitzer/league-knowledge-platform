@@ -67,6 +67,23 @@ class SegmentationArtifactTests(unittest.TestCase):
         result["source"]["title"] = "changed copy"
         self.assertEqual(silver, before)
 
+    def test_canonical_timing_round_trip_is_independent_of_decimal_exponent_formatting(self):
+        silver = source("one")
+        silver["transcript"]["segments"][0].update(start_seconds="1E+4", duration_seconds="0")
+        encoded = []
+        for capitals in (0, 1):
+            with localcontext() as context:
+                context.capitals = capitals
+                result = artifact(silver, proposal((0, 0, "CONTENT")))
+                self.assertEqual(result["sections"][0]["start_seconds"], "1E+4")
+                self.assertEqual(result["sections"][0]["end_seconds"], "1E+4")
+                encoded.append(bronze_bytes(result))
+            for reload_capitals in (0, 1):
+                with localcontext() as context:
+                    context.capitals = reload_capitals
+                    self.assertEqual(decode_segmentation_artifact(encoded[-1]), result)
+        self.assertEqual(encoded[0], encoded[1])
+
     def test_full_round_trip_and_input_validation_without_provider(self):
         silver = source()
         result = artifact(silver)
@@ -91,6 +108,26 @@ class SegmentationArtifactTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "SEGMENTED")
         self.assertEqual(content_sections(result), ())
         self.assertEqual(len(result["sections"]), 1)
+
+    def test_content_view_preserves_source_context_and_nested_copy_isolation(self):
+        original = artifact(spans=proposal((0, 0, "CONTENT"), (3, 6, "CONTENT")))
+        other_silver = source()
+        other_silver["source"].update(video_id="B", url="https://www.youtube.com/watch?v=B")
+        other_silver["bronze"]["relative_path"] = "youtube/id-42.json"
+        other = artifact(other_silver, proposal((0, 0, "CONTENT"), (3, 6, "CONTENT")))
+        first_view, other_view = content_sections(original), content_sections(other)
+        self.assertEqual(first_view[0]["text"], other_view[0]["text"])
+        self.assertEqual(first_view[0]["members"], other_view[0]["members"])
+        self.assertNotEqual(first_view, other_view)
+        self.assertEqual(first_view[0]["source"]["video_id"], "A")
+        self.assertEqual(other_view[0]["source"]["video_id"], "B")
+        before = deepcopy(original)
+        for name in ("source", "silver", "bronze", "acquisition"):
+            self.assertEqual(first_view[0][name], original[name])
+            first_view[0][name].clear()
+            self.assertEqual(first_view[1][name], original[name])
+        first_view[0]["members"][0]["source_index"] = 999
+        self.assertEqual(original, before)
 
     def test_empty_outcome_has_provenance_but_no_fake_sections_or_semantic_calls(self):
         silver = source("", "", "")

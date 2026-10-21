@@ -92,8 +92,10 @@ def _exact_end(start, duration):
 
 
 def _interval(members):
-    return (str(min(Decimal(m["start_seconds"]) for m in members)),
-            str(max(_exact_end(m["start_seconds"], m["duration_seconds"]) for m in members)))
+    with localcontext() as context:
+        context.capitals = 1  # Canonical exponent spelling must not inherit caller formatting.
+        return (str(min(Decimal(m["start_seconds"]) for m in members)),
+                str(max(_exact_end(m["start_seconds"], m["duration_seconds"]) for m in members)))
 
 
 def _metadata(value):
@@ -266,9 +268,11 @@ def decode_segmentation_artifact(content: bytes):
 
 
 def content_sections(validated_artifact):
-    """Mechanical extraction view; never mutates or deletes persisted advertisements."""
+    """Copied extraction sections with source context; persisted advertisements remain intact."""
     validate_segmentation_artifact(validated_artifact)
-    return tuple(deepcopy(s) for s in validated_artifact["sections"] if s["kind"] == SectionKind.CONTENT.value)
+    context = {name: validated_artifact[name] for name in ("source", "silver", "bronze", "acquisition")}
+    return tuple(deepcopy({**s, **context}) for s in validated_artifact["sections"]
+                 if s["kind"] == SectionKind.CONTENT.value)
 
 
 def _read_input(video_id, silver_config):
