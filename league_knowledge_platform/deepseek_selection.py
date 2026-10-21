@@ -6,6 +6,7 @@ import math
 import os
 
 from . import defaults
+from . import _deepseek_json as transport
 from .selection_models import (
     CandidateQualityAssessment, ComparativeCandidateAssessment, ComparativeSelection,
     ComparativeSelectionRequest, QualityAssessmentBatch, QualityAssessmentRequest,
@@ -48,24 +49,7 @@ def _invalid():
     return SelectionCapabilityError(SelectionFailureKind.INVALID_OUTPUT, retryable=True)
 
 
-def _pairs(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("Duplicate JSON keys")
-        result[key] = value
-    return result
-
-
-def _constant(_):
-    raise ValueError("Non-finite JSON constant")
-
-
-def _json(content):
-    try:
-        return json.loads(content, object_pairs_hook=_pairs, parse_constant=_constant)
-    except RecursionError:
-        raise ValueError("JSON nesting exceeds the parser's supported depth") from None
+_json = transport.strict_json
 
 
 def _keys(value, required, optional=()):
@@ -149,35 +133,15 @@ class DeepSeekSelectionAdapter:
                       else requests.adapters.HTTPAdapter(max_retries=0))
         self._session = session
 
+    @staticmethod
+    def _transport_error(kind, retryable):
+        return SelectionCapabilityError(SelectionFailureKind(kind), retryable=retryable)
+
     def _read(self, response):
-        content = bytearray()
-        for chunk in response.iter_content(chunk_size=4096):
-            if len(content) + len(chunk) > self.config.max_response_bytes:
-                raise _invalid()
-            content.extend(chunk)
-        return bytes(content)
+        return transport.read_bounded(response, self.config.max_response_bytes, self._transport_error)
 
     def _http_failure(self, status, content):
-        if status in (408, 429, 500, 502, 503, 504):
-            kind = (SelectionFailureKind.TIMEOUT if status == 408 else
-                    SelectionFailureKind.RATE_LIMIT if status == 429 else SelectionFailureKind.SERVICE)
-            raise SelectionCapabilityError(kind, retryable=True)
-        if status in (400, 413, 422):
-            code = None
-            try:
-                error = _json(content.decode("utf-8"))
-                code = error.get("error", {}).get("code")
-            except (ValueError, AttributeError, UnicodeError):
-                pass
-            kind = (SelectionFailureKind.CONTEXT_LIMIT if code in (
-                "context_length_exceeded", "context_limit_exceeded",
-            ) else SelectionFailureKind.INVALID_REQUEST)
-        else:
-            kind = {401: SelectionFailureKind.AUTHENTICATION,
-                    402: SelectionFailureKind.BALANCE,
-                    403: SelectionFailureKind.AUTHORIZATION}.get(
-                        status, SelectionFailureKind.PROVIDER_CONTRACT)
-        raise SelectionCapabilityError(kind, retryable=False)
+        transport.http_failure(status, content, self._transport_error)
 
     def _call(self, request, system_prompt, version, output_limit):
         self._ensure_client()
@@ -195,35 +159,12 @@ class DeepSeekSelectionAdapter:
             "stream": False,
         }
         try:
-            with self._session.post(
-                defaults.SELECTION_API_BASE + "/chat/completions", json=body,
-                headers={"Authorization": "Bearer " + self._api_key},
-                timeout=(config.connect_timeout_seconds, config.read_timeout_seconds),
-                allow_redirects=False, stream=True,
-            ) as response:
-                content = self._read(response)
-                if response.status_code != 200:
-                    self._http_failure(response.status_code, content)
-            document = _json(content.decode("utf-8"))
-            choices = document["choices"]
-            if not isinstance(choices, list) or len(choices) != 1:
-                raise ValueError("Expected one completed response")
-            choice = choices[0]
-            finish = choice["finish_reason"]
-            if finish in ("aborted", "insufficient_system_resource"):
-                raise SelectionCapabilityError(SelectionFailureKind.SERVICE, retryable=True)
-            if finish == "content_filter":
-                raise SelectionCapabilityError(SelectionFailureKind.PROVIDER_CONTRACT, retryable=False)
-            if finish != "stop":
-                raise _invalid()
-            message = choice["message"]
-            if (message["role"] != "assistant" or message.get("tool_calls")
-                    or message.get("reasoning_content")):
-                raise SelectionCapabilityError(SelectionFailureKind.PROVIDER_CONTRACT, retryable=False)
-            if not isinstance(message["content"], str) or not message["content"].strip():
-                raise _invalid()
-            artifact = _json(message["content"])
-            metadata = SemanticCallMetadata("deepseek", config.model, document.get("model"), version)
+            artifact, reported_model = transport.complete_json(
+                self._session, defaults.SELECTION_API_BASE + "/chat/completions", body,
+                self._api_key, (config.connect_timeout_seconds, config.read_timeout_seconds),
+                read=self._read, on_http_failure=self._http_failure, error=self._transport_error,
+            )
+            metadata = SemanticCallMetadata("deepseek", config.model, reported_model, version)
             return artifact, metadata
         except SelectionCapabilityError:
             raise
