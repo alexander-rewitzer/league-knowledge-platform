@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from league_knowledge_platform import (
+    DEFAULT_SEGMENTATION_CONFIG, DeepSeekSegmentationConfig,
     DEFAULT_SILVER_CONFIG,
     DEFAULT_BRONZE_CONFIG,
     DEFAULT_RANKING_CONFIG, DEFAULT_SELECTION_CONFIG, DEFAULT_TRANSCRIPT_CONFIG,
@@ -15,6 +16,9 @@ from league_knowledge_platform import defaults, models
 
 class DefaultsTests(unittest.TestCase):
     def test_service_defaults_are_discoverable_and_keep_existing_contracts(self):
+        self.assertEqual(DEFAULT_SEGMENTATION_CONFIG.root, defaults.SEGMENTATION_ROOT)
+        self.assertEqual(DEFAULT_SEGMENTATION_CONFIG.max_attempts, defaults.SEGMENTATION_MAX_ATTEMPTS)
+        self.assertEqual(DeepSeekSegmentationConfig().model, defaults.SEGMENTATION_MODEL)
         self.assertEqual(DEFAULT_SILVER_CONFIG.root, defaults.SILVER_ROOT)
         self.assertEqual(DEFAULT_BRONZE_CONFIG.root, defaults.BRONZE_ROOT)
         self.assertEqual(defaults.MIN_VIDEO_DURATION_SECONDS, 180)

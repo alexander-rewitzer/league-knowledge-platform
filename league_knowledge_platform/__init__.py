@@ -62,8 +62,34 @@ from .silver import (
     canonical_silver_path, clean_bronze_source, construct_silver_artifact,
     decode_silver_artifact, validate_silver_artifact, validate_silver_against_bronze,
 )
+from .segmentation_models import (
+    DEFAULT_SEGMENTATION_CONFIG, SectionKind, SectionSpan, SegmentationAttempt,
+    SegmentationCapability, SegmentationCapabilityError, SegmentationConfig,
+    SegmentationContractError, SegmentationError, SegmentationFilesystemError,
+    SegmentationInputError, SegmentationIntegrityError, SegmentationOutcome,
+    SegmentationProcessingResult, SegmentationProposal, SegmentationProviderError,
+    SegmentationRequest, SegmentationSegment, SegmentationValidationError, SegmentationValidationIssue,
+)
+from .segmentation import (
+    SEGMENTATION_SCHEMA_VERSION, SEGMENTATION_CONTRACT_VERSION, canonical_segmentation_path,
+    segment_silver_source, construct_segmentation_artifact, decode_segmentation_artifact,
+    validate_segmentation_artifact, validate_segmentation_proposal,
+    validate_segmentation_against_silver, load_segmentation_artifact, content_sections,
+)
+from .deepseek_segmentation import DeepSeekSegmentationAdapter, DeepSeekSegmentationConfig
 
 __all__ = [
+    "DEFAULT_SEGMENTATION_CONFIG", "SectionKind", "SectionSpan", "SegmentationAttempt",
+    "SegmentationCapability", "SegmentationCapabilityError", "SegmentationConfig",
+    "SegmentationContractError", "SegmentationError", "SegmentationFilesystemError",
+    "SegmentationInputError", "SegmentationIntegrityError", "SegmentationOutcome",
+    "SegmentationProcessingResult", "SegmentationProposal", "SegmentationProviderError",
+    "SegmentationRequest", "SegmentationSegment", "SegmentationValidationError", "SegmentationValidationIssue",
+    "SEGMENTATION_SCHEMA_VERSION", "SEGMENTATION_CONTRACT_VERSION", "canonical_segmentation_path",
+    "segment_silver_source", "construct_segmentation_artifact", "decode_segmentation_artifact",
+    "validate_segmentation_artifact", "validate_segmentation_proposal",
+    "validate_segmentation_against_silver", "load_segmentation_artifact", "content_sections",
+    "DeepSeekSegmentationAdapter", "DeepSeekSegmentationConfig",
     "SILVER_SCHEMA_VERSION", "SILVER_CLEANING_RULE_VERSION", "DEFAULT_SILVER_CONFIG",
     "SilverConfig", "SilverCleaningResult", "SilverError", "SilverInputError",
     "SilverContractError", "SilverIntegrityError", "SilverFilesystemError",

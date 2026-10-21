@@ -4,12 +4,12 @@ The Knowledge Platform is the acquisition and preparation side of an experiment 
 
 ## V1 acquisition and compilation flow
 
-The architecture has three separate views. Source Acquisition integrates selected transient sources into Bronze through resumable orchestration. Explicit deterministic Silver cleaning is implemented at the persisted artifact boundary; logical segmentation, downstream curation and the comparative experiment remain planned. These views preserve the existing Bronze/Silver/Gold responsibilities and local-first design.
+The architecture has three separate views. Source Acquisition integrates selected transient sources into Bronze through resumable orchestration. Explicit deterministic Silver cleaning and semantic logical segmentation are implemented at persisted artifact boundaries; downstream extraction/curation and the comparative experiment remain planned. These views preserve the existing Bronze/Silver/Gold responsibilities and local-first design.
 
 | View | Current status |
 | --- | --- |
 | [Source Acquisition](#source-acquisition) | Implemented target loading, discovery, integrated-ID lookup, filtering/refill, metadata ranking, transient transcripts, absolute quality assessment, deterministic gating, conditional comparison, and run-integrated Bronze persistence/registration |
-| [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Implemented Silver cleaning; planned logical segmentation, extraction, external validation, existing-knowledge inspection, integration, deterministic writing, and Gold |
+| [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Implemented Silver cleaning and semantic segmentation; planned extraction, external validation, existing-knowledge inspection, integration, deterministic writing, and Gold |
 | [Experimental Evaluation](#planned-comparative-evaluation) | Planned fixed-size baseline and quality/query-time-efficiency comparison |
 
 Manually initiated sequential run orchestration is implemented through Bronze persistence and source registration, with its own SQLite progress database and immutable target snapshots. The integrated-source catalog remains separate. Run progress coordinates the existing Bronze API but remains separate from artifact storage. Curation and other future operational SQL responsibilities remain planned; the platform is not yet a completed acquisition/curation system.
@@ -63,14 +63,21 @@ Bronze persistence is implemented and invoked directly by acquisition runs. A se
 
 Silver includes source, acquisition and track metadata, plus the canonical relative Bronze reference and SHA-256 of the exact input bytes. Strict validation and material comparison make compatible repeats byte-preserving; conflicts fail without replacement. Schema and cleaning-rule versions are explicit. Runtime Unicode version is diagnostic provenance only and cannot independently reject equivalent content. Future material normalization changes require an explicit cleaning-rule version change. Staging and non-overwriting atomic publication reuse the local filesystem mechanisms; Bronze remains read-only.
 
-Logical segmentation and the curator responsibilities below remain planned. The intended curator comprises logical Knowledge Extraction and Knowledge Integration stages followed by a Deterministic Writer. Extraction progresses through SEGMENT, VALIDATE, EXTRACT, VALIDATE, AUDIT/REFINE, and VALIDATE to Knowledge Items. Structured artifacts pass explicit validation gates; failures return corrective feedback to the agent before progression. Integration inspects existing Gold and proposes governed changes; deterministic code applies validated, approved changes. This staged explanation preserves the existing curator boundary and does not establish a new curator runtime implementation or schema. See [planned curation](../README.md#planned-agentic-knowledge-curation).
+The separate [semantic segmentation API](../README.md#semantic-silver-segmentation) is the single SEGMENT stage. An LLM proposes contiguous boundaries over indivisible Silver segments and only CONTENT/ADVERTISEMENT kinds. Deterministic validation checks complete exactly-once ordered coverage, permitting inherited index gaps and caption overlaps. Application code derives section text, member provenance and enclosing timing from all members. Clear ads are retained; mixed or ambiguous substantive material remains CONTENT. No titles, summaries, content rewriting or semantic section-size rules are introduced. Structural validation does not prove semantic coherence or classification accuracy.
+
+One application-owned budget permits at most three capability invocations, including transport and invalid-response failures, with concrete structural feedback and no HTTP retries. Full-source requests never fall back to fixed-size or technical-window segmentation. Non-overwriting atomic persistence records SEGMENTED or deterministic NO_SEGMENTABLE_CONTENT with zero sections/calls. Compatible canonical results are reused without inference; corrupt/incompatible results fail without overwrite. Original Silver/Bronze bytes remain unchanged. Exact Silver hash/reference, original indices/timing, upstream provenance and bounded provider/model/prompt/attempt metadata are retained. These explicit local APIs do not add automatic acquisition-to-preparation orchestration or async workers.
+
+The curator responsibilities below remain planned. The intended curator comprises logical Knowledge Extraction and Knowledge Integration stages followed by a Deterministic Writer. Extraction consumes validated logical CONTENT sections and progresses through EXTRACT, VALIDATE, AUDIT/REFINE, and VALIDATE to Knowledge Items, without another semantic SEGMENT phase. ADVERTISEMENT sections remain durable and may be mechanically excluded; NO_SEGMENTABLE_CONTENT is terminal without extraction. Structured artifacts pass explicit validation gates; failures return corrective feedback to the agent before progression. Integration inspects existing Gold and proposes governed changes; deterministic code applies validated, approved changes. This staged explanation preserves the existing curator boundary and does not establish a new curator runtime implementation or schema. See [planned curation](../README.md#planned-agentic-knowledge-curation).
 
 ```mermaid
 flowchart TD
     S["Persisted Bronze Source"] --> B["Deterministic NFC and Whitespace Cleaning"]
     B --> SC["Durable Silver Cleaned Transcript"]
-    SC --> LS["Planned Logical Source-Faithful Segmentation"]
-    LS --> E["Planned Agentic Knowledge Extraction"]
+    SC --> LS["Semantic Logical Segmentation and Structural Validation"]
+    LS --> SR{"Durable Processing Outcome"}
+    SR -- SEGMENTED --> SS["Source-Faithful CONTENT and ADVERTISEMENT Sections"]
+    SR -- NO_SEGMENTABLE_CONTENT --> NS["Terminal: no extraction"]
+    SS -- "Validated CONTENT" --> E["Planned Agentic Knowledge Extraction"]
     E --> V["External Validation and Corrective Feedback"]
     V -- "Needs correction" --> E
     V -- "Validated Knowledge Items" --> K["Existing-Knowledge Inspection"]
@@ -85,7 +92,7 @@ flowchart TD
 | Component | Responsibility | Durable output |
 | --- | --- | --- |
 | Bronze | Retain only the admitted source's raw transcript and available provenance. | Selected source material and source identity. |
-| Silver | Implemented deterministic NFC/whitespace cleaning with original order, indices, timing and Bronze provenance; logical source-faithful segmentation remains planned. | Versioned cleaned-transcript artifacts; future logical sections without synthesized knowledge or semantic labels. |
+| Silver | Deterministic NFC/whitespace cleaning followed by the single semantic boundary/kind proposal and deterministic partition validation. | Versioned cleaned transcripts and durable logical-section/empty outcomes, preserving source content and provenance. |
 | Knowledge Curator | Process one Silver source at a time after inspecting relevant existing Gold knowledge. | Governed changes or a recorded no-change outcome. |
 | Gold | Maintain current structured League knowledge in an adaptive, versioned Markdown Knowledge Wiki. | Canonical knowledge with provenance and visible contradictions. |
 
@@ -157,6 +164,6 @@ The evaluation will ask whether additional preparation reduces query-time comple
 
 The separate Voice Coach can later retrieve Gold knowledge and reason over the player's manually supplied game context while maintaining current-game session state. A separate evaluation system can assess retrieval and coaching quality as well as repeated-run knowledge gain. Automatic patch awareness, live game-state reading, and persistent cross-game memory are outside initial V1.
 
-The decisions and superseded assumptions are recorded in the public ADRs: [medallion layers](adr/001-medallion-architecture.md), [Silver source alignment](adr/002-source-aligned-chunks.md), [superseded Azure index](adr/003-single-search-index.md), [source metadata](adr/004-minimal-deterministic-metadata.md), [local-first V1](adr/005-local-first-v1.md), [iterative acquisition](adr/006-iterative-champion-acquisition.md), [source selection](adr/007-two-stage-source-selection.md), [canonical Gold](adr/008-canonical-gold-wiki.md), [operational state](adr/009-local-state-and-knowledge-gain.md), and [incremental retrieval](adr/010-incremental-gold-retrieval-index.md).
+The decisions and superseded assumptions are recorded in the public ADRs: [medallion layers](adr/001-medallion-architecture.md), [Silver source alignment](adr/002-source-aligned-chunks.md), [superseded Azure index](adr/003-single-search-index.md), [source metadata](adr/004-minimal-deterministic-metadata.md), [local-first V1](adr/005-local-first-v1.md), [iterative acquisition](adr/006-iterative-champion-acquisition.md), [source selection](adr/007-two-stage-source-selection.md), [canonical Gold](adr/008-canonical-gold-wiki.md), [operational state](adr/009-local-state-and-knowledge-gain.md), [incremental retrieval](adr/010-incremental-gold-retrieval-index.md), and [semantic Silver segmentation](adr/011-semantic-silver-segmentation.md).
 
 The source-selection ADR records the metadata-to-semantic funnel. The semantic portion now has its own absolute-assessment and conditional comparative stages, detailed above. The ADR history remains intact; these details do not replace its acquisition, provenance, or selected-source boundaries.
