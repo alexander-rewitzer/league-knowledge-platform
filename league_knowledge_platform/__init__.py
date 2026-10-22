@@ -1,5 +1,17 @@
 """Local League knowledge acquisition components."""
 
+from .extraction_models import (
+    DEFAULT_EXTRACTION_CONFIG, EXTRACTION_CONTRACT_VERSION, ArtifactReference, EvidenceSpan,
+    ExtractionCapability, ExtractionCapabilityError, ExtractionConfig, ExtractionError,
+    ExtractionInputError, ExtractionIntegrityError, ExtractionItemDraft, ExtractionOutcome,
+    ExtractionProposal, ExtractionProvenance, ExtractionRequest, ExtractionResponse,
+    ExtractionSection, ExtractionSegment, ExtractionValidationError, KnowledgeEvidence, KnowledgeItem,
+)
+from .extraction import (
+    extract_knowledge, extraction_section_from_artifacts, load_extraction_section, validate_extraction_proposal,
+)
+from .deepseek_extraction import DeepSeekExtractionAdapter, DeepSeekExtractionConfig
+
 from .bronze import (
     BRONZE_SCHEMA_VERSION, DEFAULT_BRONZE_CONFIG, BronzeConfig, BronzeContractError,
     BronzeError, BronzeFilesystemError, BronzeIntegrationContext, BronzeIntegrationResult,
