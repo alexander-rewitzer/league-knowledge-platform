@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from league_knowledge_platform import (
+    DEFAULT_EXTRACTION_CONFIG, DeepSeekExtractionConfig,
     DEFAULT_SEGMENTATION_CONFIG, DeepSeekSegmentationConfig,
     DEFAULT_SILVER_CONFIG,
     DEFAULT_BRONZE_CONFIG,
@@ -16,6 +17,9 @@ from league_knowledge_platform import defaults, models
 
 class DefaultsTests(unittest.TestCase):
     def test_service_defaults_are_discoverable_and_keep_existing_contracts(self):
+        self.assertEqual(DEFAULT_EXTRACTION_CONFIG.output_limit, defaults.EXTRACTION_OUTPUT_LIMIT)
+        self.assertEqual(DeepSeekExtractionConfig().model, defaults.EXTRACTION_MODEL)
+        self.assertEqual(DeepSeekExtractionConfig().max_response_bytes, defaults.EXTRACTION_MAX_RESPONSE_BYTES)
         self.assertEqual(DEFAULT_SEGMENTATION_CONFIG.root, defaults.SEGMENTATION_ROOT)
         self.assertEqual(DEFAULT_SEGMENTATION_CONFIG.max_attempts, defaults.SEGMENTATION_MAX_ATTEMPTS)
         self.assertEqual(DeepSeekSegmentationConfig().model, defaults.SEGMENTATION_MODEL)

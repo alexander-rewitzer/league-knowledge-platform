@@ -86,7 +86,7 @@ An additional source does not necessarily contribute useful new knowledge. Plann
 
 ## Current Implementation
 
-The repository implements end-to-end Source Acquisition through transient selection, resumable progress, durable Bronze and source registration, plus explicit Silver cleaning and semantic logical segmentation:
+The repository implements end-to-end Source Acquisition through transient selection, resumable progress, durable Bronze and source registration, plus explicit Silver cleaning/segmentation and transient section-level knowledge extraction:
 
 | Implemented capability | Repository evidence |
 | --- | --- |
@@ -96,6 +96,7 @@ The repository implements end-to-end Source Acquisition through transient select
 | Immutable selected-source Bronze JSON, exact segment timing, original provenance and post-persistence registration | [Bronze integration](league_knowledge_platform/bronze.py), [local publication](league_knowledge_platform/_bronze_filesystem.py) |
 | Deterministic NFC/whitespace transcript cleaning, versioned canonical Silver, exact Bronze provenance and atomic publication | [Silver cleaning](league_knowledge_platform/silver.py), [API](#silver-transcript-cleaning) |
 | Semantic boundary proposals, deterministic partition validation, bounded correction and durable logical-section/empty outcomes | [Segmentation](league_knowledge_platform/segmentation.py), [provider](league_knowledge_platform/deepseek_segmentation.py), [API](#semantic-silver-segmentation) |
+| Single-section transient KnowledgeItem proposals, application-owned identity and current-section evidence validation | [Extraction](league_knowledge_platform/extraction.py), [provider](league_knowledge_platform/deepseek_extraction.py), [API](#transient-knowledge-extraction) |
 | Unseen-source filtering, refill, immutable integrated-ID snapshot, and cross-page deduplication preserving first-seen order | [Collection](league_knowledge_platform/unseen.py) |
 | Deterministic popularity/recency ranking, explicit reference time, and configurable duration eligibility through central defaults | [Ranking](league_knowledge_platform/ranking.py), [defaults](league_knowledge_platform/defaults.py) |
 | Transient acquisition of timestamped English YouTube captions, manual-English preference, and provider failure handling | [Acquisition](league_knowledge_platform/transcripts.py), [provider adapter](league_knowledge_platform/youtube_caption_provider.py) |
@@ -108,15 +109,15 @@ Collection returns at most 20 unique unseen candidates. Duration is an eligibili
 
 The run service invokes the Bronze integration API with the original in-memory selected source. Bronze persistence and validation precede catalog registration and the final run-state commit. Discovery, ranking, transcript acquisition and semantic selection do not persist their transient candidates.
 
-The platform as a whole remains in development. Agentic extraction/curation, the Deterministic Writer, Gold storage, and retrieval indexing remain planned. Silver cleaning and semantic segmentation are explicit operations outside acquisition-run orchestration. The fixed-size baseline and comparative evaluation are also not implemented. Implemented acquisition and its offline tests do not demonstrate live provider availability, semantic model quality, or the research hypothesis.
+The platform as a whole remains in development. Standalone extraction produces transient proposals; semantic validation/refinement, source-level audit, the Deterministic Writer, Gold storage and retrieval indexing remain planned. Silver cleaning, semantic segmentation and extraction are explicit operations outside acquisition-run orchestration. The fixed-size baseline and comparative evaluation are also not implemented. Offline tests do not demonstrate live provider availability, semantic model quality or the research hypothesis.
 
 ## Planned Agentic Knowledge Curation
 
-The planned curator has two logical AI stages, **Knowledge Extraction** and **Knowledge Integration**, followed by a **Deterministic Writer**. This explains the intended curation inside the accepted Knowledge Platform architecture; it does not introduce a replacement architecture or claim that these agents already exist.
+The planned curator has two logical AI stages, **Knowledge Extraction** and **Knowledge Integration**, followed by a **Deterministic Writer**. The standalone extraction capability is implemented; the complete validated curation system remains planned within the accepted Knowledge Platform architecture.
 
-Its planned downstream flow is **Bronze → deterministic Silver Cleaning → semantic logical segmentation → planned Agentic Knowledge Extraction → Existing-Knowledge Inspection → Knowledge Integration → Updated Structured Knowledge Base**. Bronze retains the selected raw source. Silver segmentation is the single semantic SEGMENT stage; future extraction consumes validated CONTENT sections without segmenting again. External validation gates progression and deterministic code applies approved changes to existing Gold. See the separate [planned curation architecture](docs/architecture.md#knowledge-layers-and-curator).
+Its downstream architecture is **Bronze → deterministic Silver Cleaning → semantic logical segmentation → Knowledge Extraction proposals → planned semantic validation and source audit → Existing-Knowledge Inspection → Knowledge Integration → Updated Structured Knowledge Base**. Bronze retains the selected raw source. Silver segmentation is the single semantic SEGMENT stage; extraction consumes validated CONTENT sections without segmenting again. External semantic validation and subsequent Gold processing remain planned. See the separate [curation architecture](docs/architecture.md#knowledge-layers-and-curator).
 
-Knowledge Extraction is planned as:
+The standalone [Knowledge Extraction API](#transient-knowledge-extraction) now implements EXTRACT and returns transient proposals. The complete extraction/validation flow remains planned as:
 
 `EXTRACT → VALIDATE → AUDIT/REFINE → VALIDATE → Knowledge Items`
 
@@ -169,7 +170,8 @@ See [V1 scope](docs/scope.md), [architecture](docs/architecture.md), and the [ar
 | Implemented | Selected-source Bronze persistence, post-persistence registration, run integration and offline crash-recovery tests |
 | Implemented | Deterministic source-faithful Silver cleaning with durable versioned artifacts |
 | Implemented | Semantic logical segmentation, exactly-once structural validation and durable source-faithful processing results |
-| Planned next | Agentic extraction from validated CONTENT sections without another segmentation phase |
+| Implemented | Independently callable LLM extraction from one validated CONTENT section into transient KnowledgeItem proposals |
+| Planned next | Whole-section semantic validation and feedback-guided refinement, then source-level audit |
 | Planned subsequent | Validated agentic curation, Deterministic Writer, canonical Gold, incremental retrieval index, and raw knowledge-change metrics |
 | Planned evaluation | Fixed-size baseline, query-time comparison, and quality/efficiency/preparation measurements |
 
@@ -357,7 +359,7 @@ with DeepSeekSegmentationAdapter() as capability:
 
 if result.outcome is SegmentationOutcome.SEGMENTED:
     validated = load_segmentation_artifact("existing-video-id")
-    extraction_input = content_sections(validated)  # Extraction remains planned.
+    extraction_input = content_sections(validated)  # Copied CONTENT view; segment texts are in Silver.
 ```
 
 The LLM sees only language, the complete ordered segment indices/text and application-generated validation feedback. It returns contiguous endpoint ranges and exactly CONTENT or ADVERTISEMENT, without authoritative text, titles or summaries. Deterministic validation enforces complete exactly-once coverage of the actual sequence, including index gaps, empty segments, repetition and ads. Application code derives section text from Silver and retains exact constituent timing. Section intervals enclose all member starts/ends, including overlapping or nonchronological captions.
@@ -386,7 +388,7 @@ One application-owned budget permits at most three capability invocations per ex
 
 The central `SEGMENTATION_ROOT` default is `data/silver-sections`, with source-centric `youtube/id-<ASCII hex>.json` naming. Configure `SilverConfig`, `BronzeConfig` and `SegmentationConfig` roots separately and serialize calls. Both schema and segmentation contract are version 1. Results retain source/acquisition/track metadata, exact Silver-byte hash/reference, upstream Bronze provenance, section membership/timing and bounded provider/model/prompt/attempt metadata. They omit raw prompts, rejected responses and credentials.
 
-No result means no completed canonical outcome is available. SEGMENTED means successful segmentation. All-empty valid Silver produces durable NO_SEGMENTABLE_CONTENT with zero sections, zero semantic calls and no required credentials. All-advertisement nonempty input is still SEGMENTED even when its CONTENT view is empty. Future extraction treats the empty outcome as terminal and performs no second SEGMENT stage.
+No result means no completed canonical outcome is available. SEGMENTED means successful segmentation. All-empty valid Silver produces durable NO_SEGMENTABLE_CONTENT with zero sections, zero semantic calls and no required credentials. All-advertisement nonempty input is still SEGMENTED even when its CONTENT view is empty. Extraction treats the empty outcome as terminal and performs no second SEGMENT stage.
 
 LLM generation is nondeterministic. The first valid durable result for the exact Silver snapshot and supported contract is canonical; compatible calls reuse its original bytes without inference. A different valid concurrent proposal cannot replace it. Corrupt/incompatible/unsupported artifacts fail without overwrite; there is no force-reprocess API or automatic migration. Model changes alone do not regenerate compatible canonical content. Staged validation and non-overwriting publication reuse existing filesystem mechanisms; interrupted temporary files are never accepted as canonical.
 
@@ -424,6 +426,36 @@ Persistence stages a complete sibling temporary file, flushes it, validates it a
 The first durable artifact retains the original provenance even if registration fails. Retry reuses compatible Bronze without rewriting it, then completes idempotent registration; `created` and `registered` distinguish new work from a no-op. Later different target/run/selection context is neither appended nor backfilled. There is no provenance sidecar or historical event store. Material source/transcript conflicts, invalid existing artifacts, or catalog registration without valid Bronze raise `BronzeIntegrityError`. Other errors distinguish contract, filesystem and registration failures; the registration error leaves Bronze available for retry.
 
 Ordinary failures clean their own staging file. After process death, a caller-serialized retry removes only matching temporary names for that source, never promotes temporary content, and never deletes canonical JSON. Tests cover real SQLite failures and fresh-process interruption before/after publication. Atomic visibility and flush ordering do not establish physical power-loss behavior on every storage device.
+
+## Transient knowledge extraction
+
+One complete validated CONTENT section can be processed independently:
+
+```python
+from league_knowledge_platform import (
+    DeepSeekExtractionAdapter, ExtractionConfig,
+    load_extraction_section, extract_knowledge,
+)
+
+# These upstream artifacts and this CONTENT section must already exist.
+section = load_extraction_section("existing-video-id", "section-000001")
+with DeepSeekExtractionAdapter() as capability:
+    proposal = extract_knowledge(section, capability=capability,
+                                 config=ExtractionConfig(output_limit=8192))
+print(proposal.outcome.value, len(proposal.items))
+```
+
+`load_extraction_section` reads existing canonical segmentation and cleaned Silver without writing, cleaning or invoking providers. It validates versions, source identity, the exact Silver-byte hash, original section text and membership. Individual segment texts come from Silver because segmentation members retain references and timing rather than separate texts. Immutable input retains the complete section, original source indices/timing and exact segmentation/Silver/Bronze references. `extraction_section_from_artifacts` offers the same validation for callers holding upstream bytes. Unknown or ADVERTISEMENT sections are rejected before extraction; durable NO_SEGMENTABLE_CONTENT supplies no extraction unit. Advertisements remain unchanged upstream.
+
+The provider receives only the complete current segment texts/indices and language. Source content is untrusted data. The extraction objective is high coverage of substantive reusable knowledge, preserving necessary context, conditions, causal explanations, modality, source numbers and conflicting statements. Faithful rephrasing is allowed; external knowledge, source correction, subjective importance filtering and cross-section deduplication are excluded. No second segmentation, transcript truncation or summary fallback occurs.
+
+Provider item drafts have only `statement` and `spans`, each containing `first_source_index` and `last_source_index`. Provider-generated `section_id`, `item_id`, provenance or extra ontology/confidence fields are rejected. Application code validates inclusive spans against the actual current-section sequence, attaches the trusted section ID and assigns proposal-local IDs such as `item-000001`. Final KnowledgeItems have `item_id`, `statement` and `evidence[]`, whose entries contain `section_id` and `spans[]`. Multiple supporting spans are allowed; gaps in numeric source indices do not imply missing segments.
+
+ITEMS_PROPOSED contains one or more items. NO_KNOWLEDGE_PROPOSED contains zero items and is a normal **proposal**, not a technical failure or a final finding that knowledge is absent. Both remain transient and semantically unaccepted. Structural validation checks schema, outcome/count consistency, IDs, exact duplicate statements and current-section evidence references; it cannot prove faithfulness, completeness, atomicity, context preservation, semantic deduplication or minimal supporting evidence. Those checks and feedback-guided refinement belong to the future whole-section semantic Validator, including for zero-item proposals. Source-level audit and Gold integration also remain planned.
+
+Every explicit extraction operation invokes its capability once. The DeepSeek adapter has no HTTP retries. Invalid output, context/output limits, authentication, network and provider failures are explicit and never converted into an empty or partial successful proposal. Callers can invoke the same section again; generation is nondeterministic and there is no canonical reuse, cache, first-result preference or extraction persistence. The full section and returned proposal form the future Validator boundary; this API implements no semantic feedback loop or source orchestration.
+
+Configure the output allowance with `ExtractionConfig`; `DeepSeekExtractionConfig` controls model, timeouts and response-byte limit. Non-secret defaults are centralized; credentials use runtime `DEEPSEEK_API_KEY` and the existing `DEEPSEEK_MODEL` override. The API does not load `.env` automatically. Use independent adapter sessions for any later concurrent section calls. No SQL, catalog registration, Bronze/Silver mutation, Gold writing, queues or retrieval work occurs. See the [transient extraction decision](docs/adr/012-transient-knowledge-extraction.md).
 
 ## Resumable acquisition runs
 

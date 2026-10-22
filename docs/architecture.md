@@ -4,12 +4,12 @@ The Knowledge Platform is the acquisition and preparation side of an experiment 
 
 ## V1 acquisition and compilation flow
 
-The architecture has three separate views. Source Acquisition integrates selected transient sources into Bronze through resumable orchestration. Explicit deterministic Silver cleaning and semantic logical segmentation are implemented at persisted artifact boundaries; downstream extraction/curation and the comparative experiment remain planned. These views preserve the existing Bronze/Silver/Gold responsibilities and local-first design.
+The architecture has three separate views. Source Acquisition integrates selected transient sources into Bronze through resumable orchestration. Explicit deterministic Silver cleaning and semantic logical segmentation are implemented at persisted artifact boundaries. Standalone section extraction produces transient proposals; semantic validation, source audit, Gold curation and the comparative experiment remain planned. These views preserve the existing Bronze/Silver/Gold responsibilities and local-first design.
 
 | View | Current status |
 | --- | --- |
 | [Source Acquisition](#source-acquisition) | Implemented target loading, discovery, integrated-ID lookup, filtering/refill, metadata ranking, transient transcripts, absolute quality assessment, deterministic gating, conditional comparison, and run-integrated Bronze persistence/registration |
-| [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Implemented Silver cleaning and semantic segmentation; planned extraction, external validation, existing-knowledge inspection, integration, deterministic writing, and Gold |
+| [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Implemented Silver cleaning/segmentation and transient extraction proposals; planned semantic validation, source audit, existing-knowledge inspection, integration, deterministic writing and Gold |
 | [Experimental Evaluation](#planned-comparative-evaluation) | Planned fixed-size baseline and quality/query-time-efficiency comparison |
 
 Manually initiated sequential run orchestration is implemented through Bronze persistence and source registration, with its own SQLite progress database and immutable target snapshots. The integrated-source catalog remains separate. Run progress coordinates the existing Bronze API but remains separate from artifact storage. Curation and other future operational SQL responsibilities remain planned; the platform is not yet a completed acquisition/curation system.
@@ -67,7 +67,9 @@ The separate [semantic segmentation API](../README.md#semantic-silver-segmentati
 
 One application-owned budget permits at most three capability invocations, including transport and invalid-response failures, with concrete structural feedback and no HTTP retries. Full-source requests never fall back to fixed-size or technical-window segmentation. Non-overwriting atomic persistence records SEGMENTED or deterministic NO_SEGMENTABLE_CONTENT with zero sections/calls. Compatible canonical results are reused without inference; corrupt/incompatible results fail without overwrite. Original Silver/Bronze bytes remain unchanged. Exact Silver hash/reference, original indices/timing, upstream provenance and bounded provider/model/prompt/attempt metadata are retained. These explicit local APIs do not add automatic acquisition-to-preparation orchestration or async workers.
 
-The curator responsibilities below remain planned. The intended curator comprises logical Knowledge Extraction and Knowledge Integration stages followed by a Deterministic Writer. Extraction consumes validated logical CONTENT sections and progresses through EXTRACT, VALIDATE, AUDIT/REFINE, and VALIDATE to Knowledge Items, without another semantic SEGMENT phase. ADVERTISEMENT sections remain durable and may be mechanically excluded; NO_SEGMENTABLE_CONTENT is terminal without extraction. Structured artifacts pass explicit validation gates; failures return corrective feedback to the agent before progression. Integration inspects existing Gold and proposes governed changes; deterministic code applies validated, approved changes. This staged explanation preserves the existing curator boundary and does not establish a new curator runtime implementation or schema. See [planned curation](../README.md#planned-agentic-knowledge-curation).
+The standalone [Knowledge Extraction API](../README.md#transient-knowledge-extraction) now implements EXTRACT for one complete validated CONTENT section. It reconstructs member texts from the exact referenced Silver input, while retaining indices, timing and upstream hashes. The model returns only statements and spans; application code checks current-section bounds, attaches trusted section identity and assigns local item IDs. One invocation produces transient ITEMS_PROPOSED or NO_KNOWLEDGE_PROPOSED. Neither outcome is semantically accepted, canonical or persisted. Deterministic schema/reference checks do not establish semantic grounding, completeness or duplicate-free knowledge. Advertisements are rejected before provider calls and remain durable upstream; NO_SEGMENTABLE_CONTENT supplies no extraction unit. No semantic retry loop, source orchestration or upstream mutation is introduced.
+
+The remaining curator responsibilities are planned: whole-section semantic Validation and feedback/refinement, Source-Level Audit, existing-Gold inspection, Knowledge Integration and a Deterministic Writer. The future Validator receives the complete section plus its proposal, including zero-item proposals that still require Completeness validation. The future maximum-three Extract/Validate rounds are distinct from the implemented single-invocation extraction operation. Integration inspects existing Gold and proposes governed changes; deterministic code will apply validated, approved changes. See [planned curation](../README.md#planned-agentic-knowledge-curation) and the [transient extraction decision](adr/012-transient-knowledge-extraction.md).
 
 ```mermaid
 flowchart TD
@@ -77,10 +79,11 @@ flowchart TD
     LS --> SR{"Durable Processing Outcome"}
     SR -- SEGMENTED --> SS["Source-Faithful CONTENT and ADVERTISEMENT Sections"]
     SR -- NO_SEGMENTABLE_CONTENT --> NS["Terminal: no extraction"]
-    SS -- "Validated CONTENT" --> E["Planned Agentic Knowledge Extraction"]
-    E --> V["External Validation and Corrective Feedback"]
+    SS -- "Validated CONTENT" --> E["Knowledge Extraction: transient proposals"]
+    E --> V["Planned Semantic Validation and Corrective Feedback"]
     V -- "Needs correction" --> E
-    V -- "Validated Knowledge Items" --> K["Existing-Knowledge Inspection"]
+    V -- "Validated Knowledge Items" --> AU["Planned Source-Level Audit"]
+    AU --> K["Existing-Knowledge Inspection"]
     K --> I["Knowledge Integration"]
     I --> A["Validation of Proposed Changes"]
     A -- "Needs correction" --> I
