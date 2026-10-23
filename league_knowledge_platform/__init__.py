@@ -1,5 +1,19 @@
 """Local League knowledge acquisition components."""
 
+from .extraction_models import ExtractionFeedback, ExtractionRefinementContext
+from .section_validation_models import (
+    DEFAULT_SECTION_VALIDATION_CONFIG, SECTION_KNOWLEDGE_SCHEMA_VERSION, SECTION_VALIDATION_CONTRACT_VERSION,
+    GateEvaluation, GateVerdict, JudgeIssue, SectionDecision, SectionJudgeCapability,
+    SectionJudgeCapabilityError, SectionJudgeEvaluation, SectionJudgeRequest, SectionJudgeResult,
+    SectionKnowledgeContractError, SectionKnowledgeFilesystemError, SectionKnowledgeResult,
+    SectionValidationConfig, SectionValidationError, SectionValidationExhaustedError,
+    SectionValidationInputError, SectionValidationIntegrityError, SectionValidationOperationalError,
+    SemanticGate, SemanticRoundRecord, ValidatedSectionKnowledge,
+)
+from .section_validation import evaluate_section, process_section_knowledge
+from .section_knowledge import canonical_section_knowledge_path, load_validated_section_knowledge
+from .deepseek_section_validation import DeepSeekSectionJudgeAdapter, DeepSeekSectionJudgeConfig
+
 from .extraction_models import (
     DEFAULT_EXTRACTION_CONFIG, EXTRACTION_CONTRACT_VERSION, ArtifactReference, EvidenceSpan,
     ExtractionCapability, ExtractionCapabilityError, ExtractionConfig, ExtractionError,
@@ -91,6 +105,14 @@ from .segmentation import (
 from .deepseek_segmentation import DeepSeekSegmentationAdapter, DeepSeekSegmentationConfig
 
 __all__ = [
+    "DEFAULT_SECTION_VALIDATION_CONFIG", "SECTION_KNOWLEDGE_SCHEMA_VERSION", "SECTION_VALIDATION_CONTRACT_VERSION",
+    "ExtractionFeedback", "ExtractionRefinementContext", "GateEvaluation", "GateVerdict", "JudgeIssue",
+    "SectionDecision", "SectionJudgeCapability", "SectionJudgeCapabilityError", "SectionJudgeEvaluation",
+    "SectionJudgeRequest", "SectionJudgeResult", "SectionKnowledgeContractError", "SectionKnowledgeFilesystemError",
+    "SectionKnowledgeResult", "SectionValidationConfig", "SectionValidationError", "SectionValidationExhaustedError",
+    "SectionValidationInputError", "SectionValidationIntegrityError", "SectionValidationOperationalError",
+    "SemanticGate", "SemanticRoundRecord", "ValidatedSectionKnowledge", "evaluate_section", "process_section_knowledge",
+    "canonical_section_knowledge_path", "load_validated_section_knowledge", "DeepSeekSectionJudgeAdapter", "DeepSeekSectionJudgeConfig",
     "DEFAULT_SEGMENTATION_CONFIG", "SectionKind", "SectionSpan", "SegmentationAttempt",
     "SegmentationCapability", "SegmentationCapabilityError", "SegmentationConfig",
     "SegmentationContractError", "SegmentationError", "SegmentationFilesystemError",

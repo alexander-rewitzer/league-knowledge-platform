@@ -6,11 +6,11 @@ from pathlib import Path
 from .extraction_models import (
     DEFAULT_EXTRACTION_CONFIG, EXTRACTION_CONTRACT_VERSION, ArtifactReference, EvidenceSpan,
     ExtractionCapability, ExtractionCapabilityError, ExtractionConfig, ExtractionInputError,
-    ExtractionIntegrityError, ExtractionProposal,
+    ExtractionIntegrityError, ExtractionProposal, ExtractionRefinementContext,
     ExtractionProvenance, ExtractionRequest, ExtractionResponse, ExtractionSection,
     ExtractionSegment, ExtractionValidationError, KnowledgeEvidence, KnowledgeItem,
 )
-from .extraction_prompts import EXTRACTION_PROMPT_VERSION
+from .extraction_prompts import EXTRACTION_PROMPT_VERSION, EXTRACTION_REFINEMENT_PROMPT_VERSION
 from .models import _require_video_id
 from .segmentation import (
     canonical_segmentation_path, decode_segmentation_artifact, validate_segmentation_against_silver,
@@ -88,15 +88,19 @@ def _validate_spans(spans, section):
             raise ValueError("Evidence outside current section")
 
 
-def validate_extraction_proposal(proposal: ExtractionProposal, section: ExtractionSection) -> ExtractionProposal:
+def validate_extraction_proposal(proposal: ExtractionProposal, section: ExtractionSection, *,
+                                 supported_prompt_versions=(EXTRACTION_PROMPT_VERSION,)) -> ExtractionProposal:
     """Structural validation only; reference validity is not semantic acceptance."""
     try:
         if not isinstance(section, ExtractionSection) or not isinstance(proposal, ExtractionProposal):
             raise ValueError("Expected typed section and proposal")
         section.__post_init__()
         proposal.__post_init__()
+        if (not isinstance(supported_prompt_versions, tuple) or not supported_prompt_versions
+                or not set(supported_prompt_versions) <= {EXTRACTION_PROMPT_VERSION, EXTRACTION_REFINEMENT_PROMPT_VERSION}):
+            raise ValueError("Unsupported extraction prompt contract")
         if (proposal.section_id != section.section_id or proposal.provenance != section.provenance
-                or proposal.metadata.prompt_version != EXTRACTION_PROMPT_VERSION):
+                or proposal.metadata.prompt_version not in supported_prompt_versions):
             raise ValueError("Proposal context disagrees")
         statements = set()
         for position, item in enumerate(proposal.items, 1):
@@ -113,18 +117,31 @@ def validate_extraction_proposal(proposal: ExtractionProposal, section: Extracti
 
 
 def extract_knowledge(section: ExtractionSection, *, capability: ExtractionCapability,
-                      config: ExtractionConfig = DEFAULT_EXTRACTION_CONFIG) -> ExtractionProposal:
+                      config: ExtractionConfig = DEFAULT_EXTRACTION_CONFIG,
+                      refinement: ExtractionRefinementContext | None = None) -> ExtractionProposal:
     """One capability invocation; no retries, semantic Judge, cache or persistence."""
     try:
         if not isinstance(section, ExtractionSection) or not isinstance(config, ExtractionConfig):
             raise ValueError("Expected complete section and configuration")
         section.__post_init__()
         config.__post_init__()
+        if refinement is not None:
+            if not isinstance(refinement, ExtractionRefinementContext):
+                raise ValueError("Expected structured refinement context")
+            refinement.__post_init__()
+            validate_extraction_proposal(refinement.previous_proposal, section,
+                supported_prompt_versions=(EXTRACTION_PROMPT_VERSION, EXTRACTION_REFINEMENT_PROMPT_VERSION))
+            ids = {i.item_id for i in refinement.previous_proposal.items}
+            for issue in refinement.feedback:
+                if not set(issue.affected_item_ids) <= ids:
+                    raise ValueError("Feedback refers to another proposal")
+                if issue.relevant_source_spans:
+                    _validate_spans(issue.relevant_source_spans, section)
     except (ValueError, TypeError, AttributeError, ArithmeticError):
         raise ExtractionInputError("SECTION_CONTRACT") from None
     if not callable(getattr(capability, "extract", None)):
         raise ExtractionCapabilityError("CONFIGURATION", retryable=False)
-    request = ExtractionRequest(section.language_code, section.segments, config.output_limit)
+    request = ExtractionRequest(section.language_code, section.segments, config.output_limit, refinement)
     try:
         response = capability.extract(request)
     except ExtractionCapabilityError:
@@ -143,6 +160,7 @@ def extract_knowledge(section: ExtractionSection, *, capability: ExtractionCapab
             items.append(KnowledgeItem(f"item-{position:06d}", draft.statement, (evidence,)))
         proposal = ExtractionProposal(EXTRACTION_CONTRACT_VERSION, section.section_id, section.provenance,
                                       response.outcome, tuple(items), response.metadata)
-        return validate_extraction_proposal(proposal, section)
+        expected_prompt = EXTRACTION_PROMPT_VERSION if refinement is None else EXTRACTION_REFINEMENT_PROMPT_VERSION
+        return validate_extraction_proposal(proposal, section, supported_prompt_versions=(expected_prompt,))
     except (ValueError, TypeError, AttributeError, KeyError, ArithmeticError):
         raise ExtractionValidationError("RESPONSE_CONTRACT") from None

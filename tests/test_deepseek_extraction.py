@@ -162,6 +162,18 @@ class DeepSeekExtractionTests(unittest.TestCase):
             with DeepSeekExtractionAdapter() as adapter, self.assertRaises(ExtractionCapabilityError):
                 extract_knowledge(section(), capability=adapter)
 
+    def test_refinement_feedback_must_reference_the_actual_previous_proposal_before_http(self):
+        from league_knowledge_platform import ExtractionFeedback, ExtractionRefinementContext, ExtractionInputError, EvidenceSpan
+        from extraction_http_fixtures import FakeExtraction, response
+        unit = section()
+        previous = extract_knowledge(unit, capability=FakeExtraction([response('Rule')]))
+        context = ExtractionRefinementContext(previous, (ExtractionFeedback('FAITHFULNESS', 'Wrong support',
+            ('item-999999',), (EvidenceSpan(0, 3),), 'Cite the source evidence.'),))
+        adapter, transport = self.adapter([(200, envelope(document('Rule')))])
+        with self.assertRaises(ExtractionInputError):
+            extract_knowledge(unit, capability=adapter, refinement=context)
+        self.assertEqual(transport.calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()
