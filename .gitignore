@@ -2,6 +2,7 @@
 /data/bronze/
 /data/silver/
 /data/silver-sections/
+/data/validated-sections/
 __pycache__/
 *.py[cod]
 /.env

@@ -1,6 +1,6 @@
 """One HTTP invocation behind the extraction capability; no model-owned provenance."""
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
 import math
 import os
@@ -10,7 +10,10 @@ from .extraction_models import (
     EvidenceSpan, ExtractionCapabilityError, ExtractionItemDraft, ExtractionOutcome,
     ExtractionRequest, ExtractionResponse,
 )
-from .extraction_prompts import EXTRACTION_PROMPT_VERSION, EXTRACTION_SYSTEM_PROMPT
+from .extraction_prompts import (
+    EXTRACTION_PROMPT_VERSION, EXTRACTION_SYSTEM_PROMPT,
+    EXTRACTION_REFINEMENT_PROMPT_VERSION, EXTRACTION_REFINEMENT_SYSTEM_PROMPT,
+)
 from .selection_models import SemanticCallMetadata
 
 
@@ -36,8 +39,16 @@ class DeepSeekExtractionConfig:
 
 def _payload(request):
     # No identity, provenance, neighbouring sections, timing, title or ranking metadata.
-    return {"language_code": request.language_code,
+    payload = {"language_code": request.language_code,
             "segments": [{"source_index": s.source_index, "text": s.text} for s in request.segments]}
+    if request.refinement is not None:
+        previous = request.refinement.previous_proposal
+        payload["previous_proposal"] = {"outcome": previous.outcome.value, "items": [
+            {"item_id": item.item_id, "statement": item.statement,
+             "spans": [asdict(span) for evidence in item.evidence for span in evidence.spans]}
+            for item in previous.items]}
+        payload["feedback"] = [asdict(issue) for issue in request.refinement.feedback]
+    return payload
 
 
 def _decode(document, metadata):
@@ -108,8 +119,10 @@ class DeepSeekExtractionAdapter:
         request.__post_init__()
         self._ensure_client()
         config = self.config
+        prompt = EXTRACTION_SYSTEM_PROMPT if request.refinement is None else EXTRACTION_REFINEMENT_SYSTEM_PROMPT
+        prompt_version = EXTRACTION_PROMPT_VERSION if request.refinement is None else EXTRACTION_REFINEMENT_PROMPT_VERSION
         body = {"model": config.model, "messages": [
-            {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+            {"role": "system", "content": prompt},
             {"role": "user", "content": json.dumps(_payload(request), ensure_ascii=False)},
         ], "thinking": {"type": defaults.EXTRACTION_THINKING_MODE}, "temperature": defaults.EXTRACTION_TEMPERATURE,
                 "response_format": {"type": "json_object"}, "max_tokens": request.output_limit, "stream": False}
@@ -121,7 +134,7 @@ class DeepSeekExtractionAdapter:
                 on_http_failure=lambda status, content: transport.http_failure(status, content, self._error),
                 error=self._error, length_kind="OUTPUT_TRUNCATED",
             )
-            metadata = SemanticCallMetadata("deepseek", config.model, reported_model, EXTRACTION_PROMPT_VERSION)
+            metadata = SemanticCallMetadata("deepseek", config.model, reported_model, prompt_version)
             return _decode(document, metadata)
         except ExtractionCapabilityError:
             raise

@@ -160,10 +160,39 @@ class ExtractionItemDraft:
 
 
 @dataclass(frozen=True, slots=True)
+class ExtractionFeedback:
+    gate: str
+    reason: str = field(repr=False)
+    affected_item_ids: tuple[str, ...]
+    relevant_source_spans: tuple[EvidenceSpan, ...]
+    actionable_feedback: str = field(repr=False)
+
+    def __post_init__(self):
+        for value in (self.gate, self.reason, self.actionable_feedback):
+            _text(value)
+        if not isinstance(self.affected_item_ids, tuple) or any(not isinstance(v, str) for v in self.affected_item_ids):
+            raise ValueError("Expected local item references")
+        _tuple(self.relevant_source_spans, EvidenceSpan)
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractionRefinementContext:
+    previous_proposal: "ExtractionProposal" = field(repr=False)
+    feedback: tuple[ExtractionFeedback, ...] = field(repr=False)
+
+    def __post_init__(self):
+        if not isinstance(self.previous_proposal, ExtractionProposal):
+            raise ValueError("Expected complete previous proposal")
+        self.previous_proposal.__post_init__()
+        _tuple(self.feedback, ExtractionFeedback, nonempty=True)
+
+
+@dataclass(frozen=True, slots=True)
 class ExtractionRequest:
     language_code: str
     segments: tuple[ExtractionSegment, ...] = field(repr=False)
     output_limit: int
+    refinement: ExtractionRefinementContext | None = field(default=None, repr=False)
 
     def __post_init__(self):
         _text(self.language_code)
@@ -171,6 +200,10 @@ class ExtractionRequest:
         indices = tuple(s.source_index for s in self.segments)
         if indices != tuple(sorted(set(indices))) or type(self.output_limit) is not int or self.output_limit <= 0:
             raise ValueError("Invalid complete extraction request")
+        if self.refinement is not None:
+            if not isinstance(self.refinement, ExtractionRefinementContext):
+                raise ValueError("Expected structured refinement context")
+            self.refinement.__post_init__()
 
 
 @dataclass(frozen=True, slots=True)
