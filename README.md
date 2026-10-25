@@ -99,6 +99,7 @@ The repository implements end-to-end Source Acquisition through transient select
 | Single-section transient KnowledgeItem proposals, application-owned identity and current-section evidence validation | [Extraction](league_knowledge_platform/extraction.py), [provider](league_knowledge_platform/deepseek_extraction.py), [API](#transient-knowledge-extraction) |
 | Five-gate section Judge, full-proposal refinement and atomic reusable validated-section checkpoints | [Validation](league_knowledge_platform/section_validation.py), [checkpoints](league_knowledge_platform/section_knowledge.py), [API](#section-level-semantic-validation) |
 | One-source consolidation, exact input accounting, seven-gate validation and reusable canonical source knowledge | [Audit](league_knowledge_platform/source_audit.py), [artifacts](league_knowledge_platform/source_knowledge.py), [API](#source-level-audit-and-refinement) |
+| Immutable Gold units, stable identities, source-item references, historical merge links and a strict in-memory codec | [Models](league_knowledge_platform/gold_models.py), [validation](league_knowledge_platform/gold_contract.py), [API](#versioned-gold-contract) |
 | Unseen-source filtering, refill, immutable integrated-ID snapshot, and cross-page deduplication preserving first-seen order | [Collection](league_knowledge_platform/unseen.py) |
 | Deterministic popularity/recency ranking, explicit reference time, and configurable duration eligibility through central defaults | [Ranking](league_knowledge_platform/ranking.py), [defaults](league_knowledge_platform/defaults.py) |
 | Transient acquisition of timestamped English YouTube captions, manual-English preference, and provider failure handling | [Acquisition](league_knowledge_platform/transcripts.py), [provider adapter](league_knowledge_platform/youtube_caption_provider.py) |
@@ -111,7 +112,7 @@ Collection returns at most 20 unique unseen candidates. Duration is an eligibili
 
 The run service invokes the Bronze integration API with the original in-memory selected source. Bronze persistence and validation precede catalog registration and the final run-state commit. Discovery, ranking, transcript acquisition and semantic selection do not persist their transient candidates.
 
-The platform as a whole remains in development. Standalone extraction produces transient proposals; section-level validation publishes durable checkpoints, and source audit consolidates them into canonical knowledge for one source. The Gold Contract implementation, Gold Integration, Deterministic Writer, Gold storage and retrieval indexing remain planned. Knowledge preparation stages are explicit operations outside acquisition-run orchestration. The fixed-size baseline and comparative evaluation are also not implemented. Offline tests do not demonstrate live provider availability, semantic model quality or the research hypothesis.
+The platform as a whole remains in development. Standalone extraction produces transient proposals; section-level validation publishes durable checkpoints, and source audit consolidates them into canonical knowledge for one source. The Gold contract provides pure model, identity and validation primitives. Gold Integration, Deterministic Writer, Gold storage and retrieval indexing remain planned. Knowledge preparation stages are explicit operations outside acquisition-run orchestration. The fixed-size baseline and comparative evaluation are also not implemented. Offline tests do not demonstrate live provider availability, semantic model quality or the research hypothesis.
 
 ## Planned Agentic Knowledge Curation
 
@@ -136,7 +137,7 @@ flowchart LR
 
 Agents produce structured intermediate artifacts. Explicit validators outside the generating agent's decision determine stage pass/fail. Failed validation returns structured feedback for corrective iteration; progression occurs only after validation succeeds. Validation is a control mechanism, not a guarantee of factual correctness.
 
-Knowledge Integration inspects relevant existing Gold knowledge and proposes governed changes while preserving provenance and contradictions. Planned operations are `NO_CHANGE`, `CREATE`, `ENRICH`, `REWRITE`, `MERGE`, `LINK`, and `FLAG_CONFLICT`. The Deterministic Writer applies validated, approved state changes. V1 excludes autonomous destructive deletion. Gold integration frameworks, Gold artifact schema implementation and integration validators remain future technical work.
+Knowledge Integration inspects relevant existing Gold knowledge and proposes governed changes while preserving provenance and contradictions. Planned operations are `NO_CHANGE`, `CREATE`, `ENRICH`, `REWRITE`, `MERGE`, `LINK`, and `FLAG_CONFLICT`. The Deterministic Writer applies validated, approved state changes. V1 excludes autonomous destructive deletion. The [Gold contract](#versioned-gold-contract) defines valid structural state; integration frameworks, document persistence and integration validators remain future work.
 
 ## Experimental Evaluation
 
@@ -175,6 +176,7 @@ See [V1 scope](docs/scope.md), [architecture](docs/architecture.md), and the [ar
 | Implemented | Independently callable LLM extraction from one validated CONTENT section into transient KnowledgeItem proposals |
 | Implemented | Whole-section five-gate semantic validation, bounded full-proposal refinement and reusable validated-section checkpoints |
 | Implemented | Source-level audit/refinement, seven-gate validation and canonical SourceKnowledgeArtifact |
+| Implemented | Pure versioned Gold models, source-item provenance, historical identity resolution and deterministic serialization |
 | Planned subsequent | Validated agentic curation, Deterministic Writer, canonical Gold, incremental retrieval index, and raw knowledge-change metrics |
 | Planned evaluation | Fixed-size baseline, query-time comparison, and quality/efficiency/preparation measurements |
 
@@ -533,7 +535,31 @@ PASS atomically publishes a versioned `SourceKnowledgeArtifact` under the config
 
 The first compatible durable artifact is canonical. Reuse checks supported schema/audit-contract versions and exact upstream state, including every required checkpoint hash, with zero provider calls or credentials. Recorded model/prompt versions are audit metadata and do not themselves invalidate compatibility; a materially changed semantic contract requires a new source-audit contract version. Corrupt, changed or incompatible artifacts fail without replacement. Same-source races preserve the first compatible winner using owned staging files; crash leftovers are ignored. Failed-loop progress is transient.
 
-`SourceAuditConfig` controls the output root, maximum rounds and separate Agent/Validator output allowances; `DeepSeekSourceAuditConfig` controls model, timeouts and response limits. Non-secret values remain in `defaults.py`. Whole-source capacity failures remain explicit. This artifact contains accepted knowledge for one source, not integrated Gold, global IDs, Gold paths or retrieval metadata. Gold Contract implementation, integration/persistence and Retrieval remain planned. See the [source-audit decision](docs/adr/014-source-knowledge-audit.md).
+`SourceAuditConfig` controls the output root, maximum rounds and separate Agent/Validator output allowances; `DeepSeekSourceAuditConfig` controls model, timeouts and response limits. Non-secret values remain in `defaults.py`. Whole-source capacity failures remain explicit. This artifact contains accepted knowledge for one source, not integrated Gold, global IDs, Gold paths or retrieval metadata. The Gold model contract is available separately; integration/persistence and Retrieval remain planned. See the [source-audit decision](docs/adr/014-source-knowledge-audit.md).
+
+## Versioned Gold contract
+
+The [Gold models](league_knowledge_platform/gold_models.py) and [contract API](league_knowledge_platform/gold_contract.py) define structural state in memory. A `SourceKnowledgeItem` belongs to one source artifact. A `GoldKnowledgeUnit` represents integrated knowledge supported by one or more source items; neither is a Markdown document or a Retrieval document. Future Integration decides content and changes. Future document persistence owns the canonical readable Markdown plus structured metadata pair; the codec below writes no files and creates no separate canonical store.
+
+```python
+from league_knowledge_platform import (
+    GoldContractState, decode_gold_state, encode_gold_state, validate_gold_state,
+)
+
+empty_gold = GoldContractState(schema_version=1, contract_version=1)
+validate_gold_state(empty_gold)
+assert decode_gold_state(encode_gold_state(empty_gold)) == empty_gold
+```
+
+`GoldKnowledgeUnit` contains `knowledge_id`, nonempty `content`, nonempty `provenance`, `status`, optional `relations` and `merged_into`. `new_knowledge_id()` allocates `gku-` plus UUID4 hex independently of content or placement; validation never allocates or replaces identity. Supply the complete loaded state across documents to detect duplicate IDs and missing targets. Units can move or retain an ID across compatible content replacements; semantic identity decisions remain outside this validator.
+
+Status is `ACTIVE` or `MERGED`. A merged record retains content/provenance and points to a different existing ID; chains must terminate at ACTIVE without cycles. `get_gold_unit()` returns the historical record; `resolve_knowledge_id()` follows its explicit survivor links. These functions perform no merge, deletion or survivor selection. Only `related_to` and `contradicts` relations are supported. Duplicate entries, literal self-edges and unknown complete-state targets fail explicitly. Relations to historical IDs remain unchanged; resolution does not rewrite them or choose a truth winner.
+
+Each `GoldProvenance` identifies an artifact-local source item through `GoldSourceArtifactReference`: source type/ID, root-relative artifact path, exact-byte SHA-256 and source schema/audit versions. Multiple sources/items are allowed; exact duplicate contributions are rejected. `validate_gold_state()` checks reference structure. `validate_gold_provenance(state, source_items_by_artifact=...)` additionally checks membership against a complete caller-verified mapping of artifact references to `frozenset` item IDs, prepared through authoritative source readers and exact artifact hashes. The mapping itself is not proof of evidence validity. Gold does not reload, copy or revalidate upstream payloads, and structural success is not semantic acceptance or proof of source truth.
+
+Schema and contract versions are distinct from stable knowledge identity and `GoldDocumentVersion(document_id, document_version)`. The latter exposes document metadata for future persistence; this API performs no document-version increment or placement. Unknown fields, duplicate JSON keys, malformed references and unsupported Gold versions are rejected. Constructors use frozen dataclasses/tuples; collection ordering normalizes deterministically while duplicates fail. JSON bytes use strict UTF-8, sorted keys/collections and a terminal newline, preserving content exactly without text normalization.
+
+No fixed League ontology, embeddings, retrieval scores, IntegrationPlan, Markdown parsing/rendering, knowledge markers, document writer, event store or provider calls are introduced. The bounded Entity → Domain → Topic → GoldKnowledgeUnit organization belongs to future document representation; identity does not depend on it. Gold Markdown plus metadata will remain canonical, while Retrieval is a rebuildable projection. A semantic unit may later yield one or more Retrieval documents without changing Gold.
 
 ## Resumable acquisition runs
 
