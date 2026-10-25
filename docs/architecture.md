@@ -4,12 +4,12 @@ The Knowledge Platform is the acquisition and preparation side of an experiment 
 
 ## V1 acquisition and compilation flow
 
-The architecture has three separate views. Source Acquisition integrates selected transient sources into Bronze through resumable orchestration. Explicit deterministic Silver cleaning and semantic logical segmentation are implemented at persisted artifact boundaries. Standalone section extraction produces transient proposals, and section-level semantic validation/refinement publishes durable checkpoints. Source audit, Gold curation and the comparative experiment remain planned. These views preserve the existing Bronze/Silver/Gold responsibilities and local-first design.
+The architecture has three separate views. Source Acquisition integrates selected transient sources into Bronze through resumable orchestration. Explicit deterministic Silver cleaning and semantic logical segmentation are implemented at persisted artifact boundaries. Standalone section extraction produces transient proposals, section validation publishes durable checkpoints, and source audit produces canonical one-source knowledge. Gold curation and the comparative experiment remain planned. These views preserve the existing Bronze/Silver/Gold responsibilities and local-first design.
 
 | View | Current status |
 | --- | --- |
 | [Source Acquisition](#source-acquisition) | Implemented target loading, discovery, integrated-ID lookup, filtering/refill, metadata ranking, transient transcripts, absolute quality assessment, deterministic gating, conditional comparison, and run-integrated Bronze persistence/registration |
-| [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Implemented Silver cleaning/segmentation, transient extraction and validated section checkpoints; planned source audit, existing-knowledge inspection, integration, deterministic writing and Gold |
+| [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Implemented Silver cleaning/segmentation, transient extraction, validated section checkpoints and source audit; planned existing-knowledge inspection, integration, deterministic writing and Gold |
 | [Experimental Evaluation](#planned-comparative-evaluation) | Planned fixed-size baseline and quality/query-time-efficiency comparison |
 
 Manually initiated sequential run orchestration is implemented through Bronze persistence and source registration, with its own SQLite progress database and immutable target snapshots. The integrated-source catalog remains separate. Run progress coordinates the existing Bronze API but remains separate from artifact storage. Curation and other future operational SQL responsibilities remain planned; the platform is not yet a completed acquisition/curation system.
@@ -71,7 +71,9 @@ The standalone [Knowledge Extraction API](../README.md#transient-knowledge-extra
 
 The separate [section-validation API](../README.md#section-level-semantic-validation) now judges one complete section, all items and their cited evidence through five binary gates. Application code derives PASS only from five PASS verdicts. Rejection supplies actionable structured feedback for complete re-extraction; at most three completed valid proposal/Judge pairs consume semantic rounds, with no hidden retries. Operational failures abort without consuming the failed round. Zero-item proposals receive the same full-section Completeness review. PASS publishes a versioned durable per-section checkpoint, including accepted-empty results, with exact upstream references and compact round/model metadata. Compatible first durable results are reused without LLM calls; corrupt/incompatible results are never silently replaced. Standalone extraction stays transient and single-invocation. See the [validated-section decision](adr/013-validated-section-knowledge.md).
 
-Source-Level Audit, existing-Gold inspection, Knowledge Integration and a Deterministic Writer remain planned. Section checkpoints are not final source knowledge or Gold. Same-section races may duplicate provider work but atomic publication preserves one compatible winner; owned staging cleanup never deletes another operation's file. Failed-loop progress is not durably resumed, and no source-wide orchestration or worker infrastructure is introduced. Integration inspects existing Gold and proposes governed changes; deterministic code will apply validated, approved changes. See [planned curation](../README.md#planned-agentic-knowledge-curation) and the [transient extraction decision](adr/012-transient-knowledge-extraction.md).
+The separate [source-audit API](../README.md#source-level-audit-and-refinement) loads the authoritative CONTENT set and every compatible successful section checkpoint before processing. An Audit Agent consolidates a complete candidate with exactly-once contributor accounting. Application code attaches trusted evidence and lineage; a separate seven-gate Validator checks fidelity, coverage, retained meaning, deduplication, coherent units, preserved conflicts and provenance. REJECT supplies feedback for complete replacement within at most three completed semantic rounds. Provider/schema/resource failure aborts without a failed round; upstream coverage defects escalate rather than triggering extraction. Empty inputs construct a candidate without the Agent but still require Validator PASS. Successful KNOWLEDGE_AVAILABLE or NO_SOURCE_KNOWLEDGE artifacts retain exact upstream hashes, local identities and bounded round metadata. Schema, exact upstream state and audit-contract version govern reuse; recorded model/prompt versions are metadata. See the [source-audit decision](adr/014-source-knowledge-audit.md).
+
+Existing-Gold inspection, Knowledge Integration and a Deterministic Writer remain planned. SourceKnowledgeArtifact is canonical knowledge for one source, not integrated Gold. Same-section/source races may duplicate provider work but atomic publication preserves one compatible winner; owned staging cleanup never deletes another operation's file. Failed-loop progress is not durably resumed, and no automatic preparation orchestration or worker infrastructure is introduced. Integration will inspect existing Gold and propose governed changes; deterministic code will apply validated, approved changes. See [planned curation](../README.md#planned-agentic-knowledge-curation).
 
 ```mermaid
 flowchart TD
@@ -85,8 +87,10 @@ flowchart TD
     E --> V["Section Semantic Validation and Corrective Feedback"]
     V -- "Needs correction" --> E
     V -- "Five PASS" --> CP["Durable ValidatedSectionKnowledge"]
-    CP --> AU["Planned Source-Level Audit"]
-    AU --> K["Existing-Knowledge Inspection"]
+    CP --> AU["Source-Level Audit and Seven-Gate Validation"]
+    AU --> SK["Canonical SourceKnowledgeArtifact"]
+    NS -. "Explicit empty-source audit" .-> AU
+    SK --> K["Planned Existing-Knowledge Inspection"]
     K --> I["Knowledge Integration"]
     I --> A["Validation of Proposed Changes"]
     A -- "Needs correction" --> I

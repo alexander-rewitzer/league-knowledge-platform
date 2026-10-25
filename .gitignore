@@ -3,6 +3,7 @@
 /data/silver/
 /data/silver-sections/
 /data/validated-sections/
+/data/source-knowledge/
 __pycache__/
 *.py[cod]
 /.env

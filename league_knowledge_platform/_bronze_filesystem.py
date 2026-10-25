@@ -34,7 +34,7 @@ def sync_directory(directory: Path) -> None:
 
 def cleanup_temporary_files(directory: Path, encoded_id: str, *, namespace: str = "bronze") -> None:
     """Only for a caller-serialized retry; never remove a canonical JSON path."""
-    if namespace not in ("bronze", "silver", "segmentation", "section-knowledge"):
+    if namespace not in ("bronze", "silver", "segmentation", "section-knowledge", "source-knowledge"):
         raise ValueError("Unsupported artifact namespace")
     pattern = re.compile(r"\." + namespace + "-tmp-" + re.escape(encoded_id) + r"-[0-9a-f]{32}\.tmp\Z")
     for path in directory.iterdir():
@@ -43,7 +43,7 @@ def cleanup_temporary_files(directory: Path, encoded_id: str, *, namespace: str 
 
 
 def stage(directory: Path, encoded_id: str, content: bytes, *, namespace: str = "bronze") -> Path:
-    if namespace not in ("bronze", "silver", "segmentation", "section-knowledge"):
+    if namespace not in ("bronze", "silver", "segmentation", "section-knowledge", "source-knowledge"):
         raise ValueError("Unsupported artifact namespace")
     path = directory / f".{namespace}-tmp-{encoded_id}-{uuid4().hex}.tmp"
     descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0), 0o600)
