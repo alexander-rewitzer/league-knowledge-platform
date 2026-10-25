@@ -28,6 +28,25 @@ def unit(number=1, **changes):
 
 
 class GoldModelTests(unittest.TestCase):
+    def test_public_gold_apis_are_in_the_package_export_list(self):
+        import league_knowledge_platform as package
+        expected = {
+            "GOLD_CONTRACT_VERSION", "GOLD_SCHEMA_VERSION", "GoldContractError", "GoldContractState",
+            "GoldDocumentVersion", "GoldKnowledgeUnit", "GoldProvenance", "GoldReferenceError",
+            "GoldRelation", "GoldRelationKind", "GoldSourceArtifactReference", "GoldStatus",
+            "GoldVersionError", "new_document_id", "new_knowledge_id",
+            "decode_gold_document_version", "decode_gold_state", "decode_gold_unit_document",
+            "encode_gold_state", "get_gold_unit", "gold_document_version_document",
+            "gold_state_document", "gold_unit_document", "resolve_knowledge_id",
+            "validate_gold_provenance", "validate_gold_state", "validate_gold_unit",
+        }
+        namespace = {}
+        exec("from league_knowledge_platform import *", namespace)
+        self.assertTrue(expected.issubset(package.__all__))
+        for name in expected:
+            self.assertIs(namespace[name], getattr(package, name))
+        self.assertEqual(len(package.__all__), len(set(package.__all__)))
+
     def test_explicit_generation_has_no_content_or_placement_input(self):
         generated = UUID("fa49faf2-03a0-4c62-a25f-6b21592ef301")
         with patch("league_knowledge_platform.gold_models.uuid4", return_value=generated) as generate:

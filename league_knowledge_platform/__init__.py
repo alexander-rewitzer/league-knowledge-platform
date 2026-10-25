@@ -135,6 +135,14 @@ from .segmentation import (
 from .deepseek_segmentation import DeepSeekSegmentationAdapter, DeepSeekSegmentationConfig
 
 __all__ = [
+    "GOLD_CONTRACT_VERSION", "GOLD_SCHEMA_VERSION", "GoldContractError", "GoldContractState",
+    "GoldDocumentVersion", "GoldKnowledgeUnit", "GoldProvenance", "GoldReferenceError",
+    "GoldRelation", "GoldRelationKind", "GoldSourceArtifactReference", "GoldStatus",
+    "GoldVersionError", "new_document_id", "new_knowledge_id",
+    "decode_gold_document_version", "decode_gold_state", "decode_gold_unit_document",
+    "encode_gold_state", "get_gold_unit", "gold_document_version_document",
+    "gold_state_document", "gold_unit_document", "resolve_knowledge_id",
+    "validate_gold_provenance", "validate_gold_state", "validate_gold_unit",
     "DEFAULT_SOURCE_AUDIT_CONFIG", "SOURCE_AUDIT_CONTRACT_VERSION", "SOURCE_KNOWLEDGE_SCHEMA_VERSION",
     "SectionCheckpointReference", "SectionItemReference", "SourceAuditCapability", "SourceAuditCapabilityError",
     "SourceAuditConfig", "SourceAuditDecision", "SourceAuditError", "SourceAuditExhaustedError", "SourceAuditGate",
