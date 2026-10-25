@@ -106,6 +106,21 @@ flowchart TD
 | Knowledge Curator | Process one Silver source at a time after inspecting relevant existing Gold knowledge. | Governed changes or a recorded no-change outcome. |
 | Gold | Maintain current structured League knowledge in an adaptive, versioned Markdown Knowledge Wiki. | Canonical knowledge with provenance and visible contradictions. |
 
+### Gold contract and future document persistence
+
+The implemented [Gold contract API](../README.md#versioned-gold-contract) provides immutable structural models and a pure versioned codec. SourceKnowledgeArtifact contains accepted knowledge from one source; GoldKnowledgeUnit has global identity and can reference multiple contributing source items. Neither unit is a Markdown file or a Retrieval document. Future Integration decides synthesis and changes, while future persistence writes the canonical Markdown plus metadata pair. No Gold file store is implemented by the contract.
+
+```mermaid
+flowchart LR
+    S["Canonical one-source artifacts"] -. "Future Knowledge Integration" .-> U["GoldKnowledgeUnit contract"]
+    U -. "Future document persistence" .-> M["Canonical Markdown plus metadata"]
+    M -. "Future derived projection" .-> R["Retrieval documents"]
+```
+
+Knowledge IDs are independent of text, paths, topics and embeddings. Complete-state validation detects duplicate active/historical IDs and dangling relations/survivors. ACTIVE and MERGED records retain content and source-item provenance; explicit merged links resolve through finite chains without choosing a survivor or rewriting historical IDs/relations. Minimal `related_to` and `contradicts` edges can retain unresolved disagreements without automatic winners. Schema/contract compatibility and document versions are separate from identity.
+
+Gold source references retain source identity, a relative locator, exact-byte hash, upstream versions and artifact-local item ID. Structural validation is separate from checking reference membership in caller-verified source context; neither proves semantic truth. Upstream source readers own evidence validation. Deterministic UTF-8 interchange preserves content and sorts collections while rejecting duplicates, malformed fields and unsupported Gold versions. These models carry no fixed ontology, document placement or vector state. Future documents group units through the bounded Entity → Domain → Topic hierarchy, and later Retrieval preserves that context as optional-depth metadata. The contract adds no writer, IntegrationPlan, events, retrieval implementation or operational state.
+
 The curator may apply NO_CHANGE, ENRICH, REWRITE, CREATE, MERGE, LINK, or FLAG_CONFLICT. It favors enriching equivalent knowledge over duplication and does not autonomously DELETE knowledge in V1. Source and operational metadata in Bronze and Silver remain deterministic; this restriction does not prevent semantic knowledge in Gold or transcript-based LLM source selection.
 
 ## Local state and retrieval boundary
