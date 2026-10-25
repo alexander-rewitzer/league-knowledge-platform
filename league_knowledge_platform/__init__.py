@@ -1,5 +1,22 @@
 """Local League knowledge acquisition components."""
 
+from .source_audit_models import (
+    DEFAULT_SOURCE_AUDIT_CONFIG, SOURCE_AUDIT_CONTRACT_VERSION, SOURCE_KNOWLEDGE_SCHEMA_VERSION,
+    SectionCheckpointReference, SectionItemReference, SourceAuditCapability, SourceAuditCapabilityError,
+    SourceAuditConfig, SourceAuditDecision, SourceAuditError, SourceAuditExhaustedError, SourceAuditGate,
+    SourceAuditInput, SourceAuditInputError, SourceAuditIntegrityError, SourceAuditIssue,
+    SourceAuditOperationalError, SourceAuditRequest, SourceAuditResponse, SourceAuditRound,
+    SourceAuditUpstreamCoverageError, SourceConflict, SourceConflictDraft, SourceGateEvaluation,
+    SourceInputItem, SourceIssueKind, SourceItemDraft, SourceKnowledgeArtifact, SourceKnowledgeCandidate,
+    SourceKnowledgeContractError, SourceKnowledgeFilesystemError, SourceKnowledgeItem,
+    SourceKnowledgeOutcome, SourceKnowledgeResult, SourceRefinementContext, SourceValidatorCapability,
+    SourceValidatorEvaluation, SourceValidatorRequest,
+)
+from .source_audit import process_source_knowledge, evaluate_source_candidate
+from .source_audit_input import load_source_audit_input
+from .source_knowledge import canonical_source_knowledge_path, load_source_knowledge
+from .deepseek_source_audit import DeepSeekSourceAuditAdapter, DeepSeekSourceAuditConfig, DeepSeekSourceValidatorAdapter
+
 from .extraction_models import ExtractionFeedback, ExtractionRefinementContext
 from .section_validation_models import (
     DEFAULT_SECTION_VALIDATION_CONFIG, SECTION_KNOWLEDGE_SCHEMA_VERSION, SECTION_VALIDATION_CONTRACT_VERSION,
@@ -105,6 +122,18 @@ from .segmentation import (
 from .deepseek_segmentation import DeepSeekSegmentationAdapter, DeepSeekSegmentationConfig
 
 __all__ = [
+    "DEFAULT_SOURCE_AUDIT_CONFIG", "SOURCE_AUDIT_CONTRACT_VERSION", "SOURCE_KNOWLEDGE_SCHEMA_VERSION",
+    "SectionCheckpointReference", "SectionItemReference", "SourceAuditCapability", "SourceAuditCapabilityError",
+    "SourceAuditConfig", "SourceAuditDecision", "SourceAuditError", "SourceAuditExhaustedError", "SourceAuditGate",
+    "SourceAuditInput", "SourceAuditInputError", "SourceAuditIntegrityError", "SourceAuditIssue",
+    "SourceAuditOperationalError", "SourceAuditRequest", "SourceAuditResponse", "SourceAuditRound",
+    "SourceAuditUpstreamCoverageError", "SourceConflict", "SourceConflictDraft", "SourceGateEvaluation",
+    "SourceInputItem", "SourceIssueKind", "SourceItemDraft", "SourceKnowledgeArtifact", "SourceKnowledgeCandidate",
+    "SourceKnowledgeContractError", "SourceKnowledgeFilesystemError", "SourceKnowledgeItem", "SourceKnowledgeOutcome",
+    "SourceKnowledgeResult", "SourceRefinementContext", "SourceValidatorCapability", "SourceValidatorEvaluation",
+    "SourceValidatorRequest", "process_source_knowledge", "evaluate_source_candidate", "load_source_audit_input",
+    "canonical_source_knowledge_path", "load_source_knowledge", "DeepSeekSourceAuditAdapter",
+    "DeepSeekSourceAuditConfig", "DeepSeekSourceValidatorAdapter",
     "DEFAULT_SECTION_VALIDATION_CONFIG", "SECTION_KNOWLEDGE_SCHEMA_VERSION", "SECTION_VALIDATION_CONTRACT_VERSION",
     "ExtractionFeedback", "ExtractionRefinementContext", "GateEvaluation", "GateVerdict", "JudgeIssue",
     "SectionDecision", "SectionJudgeCapability", "SectionJudgeCapabilityError", "SectionJudgeEvaluation",
