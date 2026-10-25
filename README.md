@@ -86,7 +86,7 @@ An additional source does not necessarily contribute useful new knowledge. Plann
 
 ## Current Implementation
 
-The repository implements end-to-end Source Acquisition through transient selection, resumable progress, durable Bronze and source registration, plus explicit Silver cleaning/segmentation and transient section-level knowledge extraction:
+The repository implements end-to-end Source Acquisition through transient selection, resumable progress, durable Bronze and source registration, plus explicit Silver cleaning/segmentation, transient extraction and durable validated-section knowledge:
 
 | Implemented capability | Repository evidence |
 | --- | --- |
@@ -97,6 +97,7 @@ The repository implements end-to-end Source Acquisition through transient select
 | Deterministic NFC/whitespace transcript cleaning, versioned canonical Silver, exact Bronze provenance and atomic publication | [Silver cleaning](league_knowledge_platform/silver.py), [API](#silver-transcript-cleaning) |
 | Semantic boundary proposals, deterministic partition validation, bounded correction and durable logical-section/empty outcomes | [Segmentation](league_knowledge_platform/segmentation.py), [provider](league_knowledge_platform/deepseek_segmentation.py), [API](#semantic-silver-segmentation) |
 | Single-section transient KnowledgeItem proposals, application-owned identity and current-section evidence validation | [Extraction](league_knowledge_platform/extraction.py), [provider](league_knowledge_platform/deepseek_extraction.py), [API](#transient-knowledge-extraction) |
+| Five-gate section Judge, full-proposal refinement and atomic reusable validated-section checkpoints | [Validation](league_knowledge_platform/section_validation.py), [checkpoints](league_knowledge_platform/section_knowledge.py), [API](#section-level-semantic-validation) |
 | Unseen-source filtering, refill, immutable integrated-ID snapshot, and cross-page deduplication preserving first-seen order | [Collection](league_knowledge_platform/unseen.py) |
 | Deterministic popularity/recency ranking, explicit reference time, and configurable duration eligibility through central defaults | [Ranking](league_knowledge_platform/ranking.py), [defaults](league_knowledge_platform/defaults.py) |
 | Transient acquisition of timestamped English YouTube captions, manual-English preference, and provider failure handling | [Acquisition](league_knowledge_platform/transcripts.py), [provider adapter](league_knowledge_platform/youtube_caption_provider.py) |
@@ -109,15 +110,15 @@ Collection returns at most 20 unique unseen candidates. Duration is an eligibili
 
 The run service invokes the Bronze integration API with the original in-memory selected source. Bronze persistence and validation precede catalog registration and the final run-state commit. Discovery, ranking, transcript acquisition and semantic selection do not persist their transient candidates.
 
-The platform as a whole remains in development. Standalone extraction produces transient proposals; semantic validation/refinement, source-level audit, the Deterministic Writer, Gold storage and retrieval indexing remain planned. Silver cleaning, semantic segmentation and extraction are explicit operations outside acquisition-run orchestration. The fixed-size baseline and comparative evaluation are also not implemented. Offline tests do not demonstrate live provider availability, semantic model quality or the research hypothesis.
+The platform as a whole remains in development. Standalone extraction produces transient proposals; section-level semantic validation/refinement now publishes durable accepted-section checkpoints. Source-level audit, the Deterministic Writer, Gold storage and retrieval indexing remain planned. Silver cleaning, semantic segmentation and extraction are explicit operations outside acquisition-run orchestration. The fixed-size baseline and comparative evaluation are also not implemented. Offline tests do not demonstrate live provider availability, semantic model quality or the research hypothesis.
 
 ## Planned Agentic Knowledge Curation
 
-The planned curator has two logical AI stages, **Knowledge Extraction** and **Knowledge Integration**, followed by a **Deterministic Writer**. The standalone extraction capability is implemented; the complete validated curation system remains planned within the accepted Knowledge Platform architecture.
+The planned curator has two logical AI stages, **Knowledge Extraction** and **Knowledge Integration**, followed by a **Deterministic Writer**. Standalone extraction and section-level validation/refinement are implemented; the complete source-audited curation system remains planned within the accepted Knowledge Platform architecture.
 
-Its downstream architecture is **Bronze → deterministic Silver Cleaning → semantic logical segmentation → Knowledge Extraction proposals → planned semantic validation and source audit → Existing-Knowledge Inspection → Knowledge Integration → Updated Structured Knowledge Base**. Bronze retains the selected raw source. Silver segmentation is the single semantic SEGMENT stage; extraction consumes validated CONTENT sections without segmenting again. External semantic validation and subsequent Gold processing remain planned. See the separate [curation architecture](docs/architecture.md#knowledge-layers-and-curator).
+Its downstream architecture is **Bronze → deterministic Silver Cleaning → semantic logical segmentation → Knowledge Extraction proposals → section-level semantic validation/checkpoints → planned source audit → Existing-Knowledge Inspection → Knowledge Integration → Updated Structured Knowledge Base**. Bronze retains the selected raw source. Silver segmentation is the single semantic SEGMENT stage; extraction consumes validated CONTENT sections without segmenting again. Section-level semantic validation is implemented; source audit and subsequent Gold processing remain planned. See the separate [curation architecture](docs/architecture.md#knowledge-layers-and-curator).
 
-The standalone [Knowledge Extraction API](#transient-knowledge-extraction) now implements EXTRACT and returns transient proposals. The complete extraction/validation flow remains planned as:
+The standalone [Knowledge Extraction API](#transient-knowledge-extraction) now implements EXTRACT and returns transient proposals. The complete curation flow includes implemented EXTRACT / section-level VALIDATE and planned source-wide audit/refinement:
 
 `EXTRACT → VALIDATE → AUDIT/REFINE → VALIDATE → Knowledge Items`
 
@@ -171,7 +172,8 @@ See [V1 scope](docs/scope.md), [architecture](docs/architecture.md), and the [ar
 | Implemented | Deterministic source-faithful Silver cleaning with durable versioned artifacts |
 | Implemented | Semantic logical segmentation, exactly-once structural validation and durable source-faithful processing results |
 | Implemented | Independently callable LLM extraction from one validated CONTENT section into transient KnowledgeItem proposals |
-| Planned next | Whole-section semantic validation and feedback-guided refinement, then source-level audit |
+| Implemented | Whole-section five-gate semantic validation, bounded full-proposal refinement and reusable validated-section checkpoints |
+| Planned next | Source-level audit and refinement across validated sections |
 | Planned subsequent | Validated agentic curation, Deterministic Writer, canonical Gold, incremental retrieval index, and raw knowledge-change metrics |
 | Planned evaluation | Fixed-size baseline, query-time comparison, and quality/efficiency/preparation measurements |
 
@@ -451,11 +453,53 @@ The provider receives only the complete current segment texts/indices and langua
 
 Provider item drafts have only `statement` and `spans`, each containing `first_source_index` and `last_source_index`. Provider-generated `section_id`, `item_id`, provenance or extra ontology/confidence fields are rejected. Application code validates inclusive spans against the actual current-section sequence, attaches the trusted section ID and assigns proposal-local IDs such as `item-000001`. Final KnowledgeItems have `item_id`, `statement` and `evidence[]`, whose entries contain `section_id` and `spans[]`. Multiple supporting spans are allowed; gaps in numeric source indices do not imply missing segments.
 
-ITEMS_PROPOSED contains one or more items. NO_KNOWLEDGE_PROPOSED contains zero items and is a normal **proposal**, not a technical failure or a final finding that knowledge is absent. Both remain transient and semantically unaccepted. Structural validation checks schema, outcome/count consistency, IDs, exact duplicate statements and current-section evidence references; it cannot prove faithfulness, completeness, atomicity, context preservation, semantic deduplication or minimal supporting evidence. Those checks and feedback-guided refinement belong to the future whole-section semantic Validator, including for zero-item proposals. Source-level audit and Gold integration also remain planned.
+ITEMS_PROPOSED contains one or more items. NO_KNOWLEDGE_PROPOSED contains zero items and is a normal **proposal**, not a technical failure or a final finding that knowledge is absent. Both remain transient and semantically unaccepted. Structural validation checks schema, outcome/count consistency, IDs, exact duplicate statements and current-section evidence references; it cannot prove faithfulness, completeness, atomicity, context preservation, semantic deduplication or minimal supporting evidence. Those checks and feedback-guided refinement belong to the separate implemented whole-section semantic Validator, including for zero-item proposals. Source-level audit and Gold integration also remain planned.
 
-Every explicit extraction operation invokes its capability once. The DeepSeek adapter has no HTTP retries. Invalid output, context/output limits, authentication, network and provider failures are explicit and never converted into an empty or partial successful proposal. Callers can invoke the same section again; generation is nondeterministic and there is no canonical reuse, cache, first-result preference or extraction persistence. The full section and returned proposal form the future Validator boundary; this API implements no semantic feedback loop or source orchestration.
+Every explicit extraction operation invokes its capability once. The DeepSeek adapter has no HTTP retries. Invalid output, context/output limits, authentication, network and provider failures are explicit and never converted into an empty or partial successful proposal. Callers can invoke the same section again; generation is nondeterministic and there is no canonical reuse, cache, first-result preference or extraction persistence. The full section and returned proposal form the separate Validator boundary; this API implements no semantic feedback loop or source orchestration.
 
 Configure the output allowance with `ExtractionConfig`; `DeepSeekExtractionConfig` controls model, timeouts and response-byte limit. Non-secret defaults are centralized; credentials use runtime `DEEPSEEK_API_KEY` and the existing `DEEPSEEK_MODEL` override. The API does not load `.env` automatically. Use independent adapter sessions for any later concurrent section calls. No SQL, catalog registration, Bronze/Silver mutation, Gold writing, queues or retrieval work occurs. See the [transient extraction decision](docs/adr/012-transient-knowledge-extraction.md).
+
+## Section-level semantic validation
+
+One complete CONTENT section and its proposal can be judged, refined and checkpointed independently:
+
+```python
+from league_knowledge_platform import (
+    DeepSeekExtractionAdapter, DeepSeekSectionJudgeAdapter,
+    process_section_knowledge, load_validated_section_knowledge,
+)
+
+# Existing Silver and segmentation artifacts are required.
+with DeepSeekExtractionAdapter() as extractor, DeepSeekSectionJudgeAdapter() as judge:
+    result = process_section_knowledge(
+        "existing-video-id", "section-000001",
+        extraction_capability=extractor, judge_capability=judge,
+    )
+print(result.created, result.checkpoint.semantic_rounds_used)
+
+# Read-only inspection needs no provider. Reprocessing a compatible checkpoint
+# also needs no capabilities or credentials and makes zero LLM calls.
+checkpoint = load_validated_section_knowledge("existing-video-id", "section-000001")
+reused = process_section_knowledge("existing-video-id", "section-000001")
+```
+
+The service loads the complete validated upstream section and checks source/section identity, exact segmentation/Silver hashes, transitive Bronze provenance and proposal compatibility. An optional `initial_proposal` can supply an existing structurally valid extraction result instead of invoking initial extraction. Advertisements and NO_SEGMENTABLE_CONTENT are not processing units. No upstream artifact is rewritten.
+
+The Judge receives all current items and their actual evidence alongside the complete section. Exactly five gates return PASS or FAIL: FAITHFULNESS, COMPLETENESS, ATOMICITY, CONTEXT_PRESERVATION and DUPLICATION. Application code derives PASS only from five PASS verdicts. Strict output validation rejects missing/extra gates, scores, overall overrides, invalid feedback references and rewritten-item fields. Source text, proposed statements and feedback remain untrusted JSON data rather than instructions.
+
+Faithfulness tolerates semantic paraphrasing, compression and abstraction rather than enforcing wording equality. Completeness concerns all substantive reusable knowledge, not every sentence, repetition or filler. Atomicity retains coherent rules with necessary conditions and causal explanations. Context preservation and within-section duplication are explicit gates; cited evidence must actually support the complete claim. The Judge diagnoses with actionable reasons, affected local IDs and source spans; it does not correct source facts or rewrite knowledge itself.
+
+After REJECT, extraction receives the original complete section, previous complete proposal and structured feedback and returns a complete replacement. There are no item-level patches. The optional refinement path has a separate prompt version; ordinary standalone extraction retains its existing prompt, request projection and single-invocation behavior. Refined provider drafts still contain only statements and spans, with section identity and local IDs supplied by application code.
+
+At most three **completed semantic rounds** occur per explicit operation. A round counts only after a structurally valid proposal and Judge response both exist. A valid REJECT consumes one round; PASS in round 1, 2 or 3 succeeds. Provider/network/schema/authentication/context/output failures abort explicitly without consuming the failed round. They never trigger hidden transport, Judge or extraction retries. Three REJECTs raise SECTION_VALIDATION_FAILED, with no lowered threshold, fallback knowledge or successful checkpoint. Errors expose the completed-round count; failed-loop progress is not persisted or resumed automatically.
+
+Both item-bearing and NO_KNOWLEDGE_PROPOSED proposals undergo all five gates. Accepted zero-item section knowledge is a durable reviewed result, distinct from unprocessed input, technical failure, exhausted validation and upstream NO_SEGMENTABLE_CONTENT. Acceptance is the Judge's semantic judgment, not an objective guarantee of truth or completeness. Automated offline fixtures verify contracts and control flow, not live semantic accuracy.
+
+Successful checkpoints use schema 1 / validation contract 1 under `data/validated-sections/youtube/id-<ASCII hex>/section-000001.json`, excluded from Git. They retain accepted KnowledgeItems, exact upstream references, extraction/Judge metadata, completed rounds and gate diagnoses without duplicating transcripts or rejected proposal text. The first compatible durable result wins. Reuse validates compatibility and makes no LLM calls; corrupt/incompatible artifacts or changed upstream hashes/contracts fail without overwrite. Model configuration alone does not regenerate compatible knowledge.
+
+Publication uses owned unique staging, flush/validation, atomic non-overwriting publication and final revalidation. A compatible racing winner is reused; same-section races can duplicate transient provider work. An operation cleans only its own temporary file; crash leftovers are ignored, not promoted or swept while other operations may run. `operation_rounds_used` describes this call; the checkpoint's `semantic_rounds_used` describes its original accepted history. `load_validated_section_knowledge` only reads; processing also confirms durability before returning success.
+
+`SectionValidationConfig` controls the independent output root, maximum rounds (never above three) and Judge output allowance. `DeepSeekSectionJudgeConfig` controls model, timeouts and response-byte limits. Non-secret defaults are centralized; runtime credentials follow the existing DeepSeek convention. Complete input is never truncated or re-segmented to fit provider capacity. Use independent provider sessions for later section concurrency. Source-wide audit/final SourceKnowledge, Gold integration, retrieval and queues/workers remain planned or outside this API. See [validated-section decision](docs/adr/013-validated-section-knowledge.md).
 
 ## Resumable acquisition runs
 

@@ -147,6 +147,15 @@ class ExtractionTests(unittest.TestCase):
                        "cross-section", "greetings", "calls to action", "macro", "rune", "independent claims"):
             self.assertIn(phrase.lower(), EXTRACTION_SYSTEM_PROMPT.lower())
 
+    def test_refinement_prompt_support_is_opt_in_and_default_standalone_validation_is_unchanged(self):
+        from league_knowledge_platform.extraction_prompts import EXTRACTION_REFINEMENT_PROMPT_VERSION
+        unit = section()
+        original = extract_knowledge(unit, capability=FakeExtraction([response('Rule')]))
+        refined = replace(original, metadata=replace(original.metadata, prompt_version=EXTRACTION_REFINEMENT_PROMPT_VERSION))
+        with self.assertRaises(ExtractionValidationError):
+            validate_extraction_proposal(refined, unit)
+        self.assertEqual(validate_extraction_proposal(refined, unit, supported_prompt_versions=(EXTRACTION_REFINEMENT_PROMPT_VERSION,)), refined)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from league_knowledge_platform import (
+    DEFAULT_SECTION_VALIDATION_CONFIG, DeepSeekSectionJudgeConfig,
     DEFAULT_EXTRACTION_CONFIG, DeepSeekExtractionConfig,
     DEFAULT_SEGMENTATION_CONFIG, DeepSeekSegmentationConfig,
     DEFAULT_SILVER_CONFIG,
@@ -17,6 +18,9 @@ from league_knowledge_platform import defaults, models
 
 class DefaultsTests(unittest.TestCase):
     def test_service_defaults_are_discoverable_and_keep_existing_contracts(self):
+        self.assertEqual(DEFAULT_SECTION_VALIDATION_CONFIG.root, defaults.SECTION_KNOWLEDGE_ROOT)
+        self.assertEqual(DEFAULT_SECTION_VALIDATION_CONFIG.max_semantic_rounds, 3)
+        self.assertEqual(DeepSeekSectionJudgeConfig().model, defaults.SECTION_JUDGE_MODEL)
         self.assertEqual(DEFAULT_EXTRACTION_CONFIG.output_limit, defaults.EXTRACTION_OUTPUT_LIMIT)
         self.assertEqual(DeepSeekExtractionConfig().model, defaults.EXTRACTION_MODEL)
         self.assertEqual(DeepSeekExtractionConfig().max_response_bytes, defaults.EXTRACTION_MAX_RESPONSE_BYTES)
