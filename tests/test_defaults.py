@@ -1,10 +1,12 @@
 """Central defaults preserve existing discovery and collection behavior."""
 
 import inspect
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
 from league_knowledge_platform import (
+    GoldConfig,
     DEFAULT_SOURCE_AUDIT_CONFIG, DeepSeekSourceAuditConfig,
     DEFAULT_SECTION_VALIDATION_CONFIG, DeepSeekSectionJudgeConfig,
     DEFAULT_EXTRACTION_CONFIG, DeepSeekExtractionConfig,
@@ -19,6 +21,7 @@ from league_knowledge_platform import defaults, models
 
 class DefaultsTests(unittest.TestCase):
     def test_service_defaults_are_discoverable_and_keep_existing_contracts(self):
+        self.assertEqual(GoldConfig().root, Path(defaults.GOLD_ROOT).absolute())
         self.assertEqual(DEFAULT_SOURCE_AUDIT_CONFIG.root, defaults.SOURCE_KNOWLEDGE_ROOT)
         self.assertEqual(DEFAULT_SOURCE_AUDIT_CONFIG.max_semantic_rounds, 3)
         self.assertEqual(DEFAULT_SOURCE_AUDIT_CONFIG.audit_output_limit, defaults.SOURCE_AUDIT_OUTPUT_LIMIT)

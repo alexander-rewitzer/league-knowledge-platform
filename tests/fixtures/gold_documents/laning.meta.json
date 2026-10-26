@@ -1,0 +1,111 @@
+{
+  "document_id": "gdoc-00000000000000000000000000000001",
+  "document_schema_version": 1,
+  "document_version": 1,
+  "domain_key": "laning",
+  "entity": {
+    "display_name": "Ahri",
+    "entity_key": "ahri",
+    "namespace": "champions"
+  },
+  "gold_contract_version": 1,
+  "gold_schema_version": 1,
+  "historical_units": [],
+  "marker_format_version": 1,
+  "title": "Ahri — Laning",
+  "topics": [
+    {
+      "position": 0,
+      "title": "Reset Timing",
+      "topic_id": "topic-00000000000000000000000000000001",
+      "units": [
+        {
+          "knowledge_id": "gku-00000000000000000000000000000001",
+          "position": 0
+        },
+        {
+          "knowledge_id": "gku-00000000000000000000000000000002",
+          "position": 1
+        }
+      ]
+    },
+    {
+      "position": 1,
+      "title": "Trading",
+      "topic_id": "topic-00000000000000000000000000000002",
+      "units": [
+        {
+          "knowledge_id": "gku-00000000000000000000000000000003",
+          "position": 0
+        }
+      ]
+    }
+  ],
+  "units": [
+    {
+      "content_sha256": "ba70121febbb01c1dd2d0021e381a4f573e0116e40783ec853dfb0ed668b0a2a",
+      "knowledge_id": "gku-00000000000000000000000000000001",
+      "merged_into": null,
+      "provenance": [
+        {
+          "source_item_id": "source-item-000001",
+          "source_knowledge_artifact": {
+            "audit_contract_version": 1,
+            "relative_path": "youtube/id-41.json",
+            "schema_version": 1,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_id": "A",
+            "source_type": "youtube"
+          }
+        }
+      ],
+      "relations": [
+        {
+          "kind": "contradicts",
+          "target_knowledge_id": "gku-00000000000000000000000000000002"
+        }
+      ],
+      "status": "ACTIVE"
+    },
+    {
+      "content_sha256": "151ca7917d84128c7f456593c5181543a9b471ea49fb636aa3ecd18a902e917c",
+      "knowledge_id": "gku-00000000000000000000000000000002",
+      "merged_into": null,
+      "provenance": [
+        {
+          "source_item_id": "source-item-000001",
+          "source_knowledge_artifact": {
+            "audit_contract_version": 1,
+            "relative_path": "youtube/id-41.json",
+            "schema_version": 1,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_id": "A",
+            "source_type": "youtube"
+          }
+        }
+      ],
+      "relations": [],
+      "status": "ACTIVE"
+    },
+    {
+      "content_sha256": "930cbd77a92cceca6736cbaa4b378288ba4cc2174883175c1a17c90648ff8962",
+      "knowledge_id": "gku-00000000000000000000000000000003",
+      "merged_into": null,
+      "provenance": [
+        {
+          "source_item_id": "source-item-000001",
+          "source_knowledge_artifact": {
+            "audit_contract_version": 1,
+            "relative_path": "youtube/id-41.json",
+            "schema_version": 1,
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "source_id": "A",
+            "source_type": "youtube"
+          }
+        }
+      ],
+      "relations": [],
+      "status": "ACTIVE"
+    }
+  ]
+}

@@ -9,7 +9,7 @@ The architecture has three separate views. Source Acquisition integrates selecte
 | View | Current status |
 | --- | --- |
 | [Source Acquisition](#source-acquisition) | Implemented target loading, discovery, integrated-ID lookup, filtering/refill, metadata ranking, transient transcripts, absolute quality assessment, deterministic gating, conditional comparison, and run-integrated Bronze persistence/registration |
-| [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Implemented Silver cleaning/segmentation, transient extraction, validated section checkpoints and source audit; planned existing-knowledge inspection, integration, deterministic writing and Gold |
+| [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Implemented Silver cleaning/segmentation, extraction, validated checkpoints, source audit and Gold document storage; planned existing-knowledge inspection, semantic integration and deterministic writing |
 | [Experimental Evaluation](#planned-comparative-evaluation) | Planned fixed-size baseline and quality/query-time-efficiency comparison |
 
 Manually initiated sequential run orchestration is implemented through Bronze persistence and source registration, with its own SQLite progress database and immutable target snapshots. The integrated-source catalog remains separate. Run progress coordinates the existing Bronze API but remains separate from artifact storage. Curation and other future operational SQL responsibilities remain planned; the platform is not yet a completed acquisition/curation system.
@@ -106,20 +106,24 @@ flowchart TD
 | Knowledge Curator | Process one Silver source at a time after inspecting relevant existing Gold knowledge. | Governed changes or a recorded no-change outcome. |
 | Gold | Maintain current structured League knowledge in an adaptive, versioned Markdown Knowledge Wiki. | Canonical knowledge with provenance and visible contradictions. |
 
-### Gold contract and future document persistence
+### Gold contract and canonical document persistence
 
-The implemented [Gold contract API](../README.md#versioned-gold-contract) provides immutable structural models and a pure versioned codec. SourceKnowledgeArtifact contains accepted knowledge from one source; GoldKnowledgeUnit has global identity and can reference multiple contributing source items. Neither unit is a Markdown file or a Retrieval document. Future Integration decides synthesis and changes, while future persistence writes the canonical Markdown plus metadata pair. No Gold file store is implemented by the contract.
+The implemented [Gold contract API](../README.md#versioned-gold-contract) provides immutable structural models and a pure versioned codec. SourceKnowledgeArtifact contains accepted knowledge from one source; GoldKnowledgeUnit has global identity and can reference multiple contributing source items. A Gold unit is distinct from a Markdown file, topic and Retrieval document. Future Integration decides synthesis and changes. The separate [document API](../README.md#canonical-gold-documents) renders, validates and persists canonical Markdown plus structured metadata without implementing those semantic decisions.
 
 ```mermaid
 flowchart LR
     S["Canonical one-source artifacts"] -. "Future Knowledge Integration" .-> U["GoldKnowledgeUnit contract"]
-    U -. "Future document persistence" .-> M["Canonical Markdown plus metadata"]
+    U --> M["Canonical Markdown plus metadata"]
     M -. "Future derived projection" .-> R["Retrieval documents"]
 ```
 
 Knowledge IDs are independent of text, paths, topics and embeddings. Complete-state validation detects duplicate active/historical IDs and dangling relations/survivors. ACTIVE and MERGED records retain content and source-item provenance; explicit merged links resolve through finite chains without choosing a survivor or rewriting historical IDs/relations. Minimal `related_to` and `contradicts` edges can retain unresolved disagreements without automatic winners. Schema/contract compatibility and document versions are separate from identity.
 
-Gold source references retain source identity, a relative locator, exact-byte hash, upstream versions and artifact-local item ID. Structural validation is separate from checking reference membership in caller-verified source context; neither proves semantic truth. Upstream source readers own evidence validation. Deterministic UTF-8 interchange preserves content and sorts collections while rejecting duplicates, malformed fields and unsupported Gold versions. These models carry no fixed ontology, document placement or vector state. Future documents group units through the bounded Entity → Domain → Topic hierarchy, and later Retrieval preserves that context as optional-depth metadata. The contract adds no writer, IntegrationPlan, events, retrieval implementation or operational state.
+Gold source references retain source identity, a relative locator, exact-byte hash, upstream versions and artifact-local item ID. Structural validation is separate from checking reference membership in caller-verified source context; neither proves semantic truth. Upstream source readers own evidence validation. Deterministic UTF-8 interchange preserves content and sorts collections while rejecting duplicates, malformed fields and unsupported Gold versions. The contract carries no fixed ontology or vector state. Documents group units through bounded Entity → Document/Domain → Topic organization, and later Retrieval can preserve that context as optional-depth metadata.
+
+Markdown and metadata are jointly canonical. ACTIVE content is marked by stable knowledge IDs; metadata records exact hashes, placements, provenance and relations. Document IDs survive relocation independently of versions. Changed logical documents require increased versions. Empty Gold is valid, but every canonical document/topic contains ACTIVE units. Pure normalization prunes empty containers while retaining full historical MERGED records in the resolved survivor document's metadata. It does not merge units or delete knowledge/history.
+
+The local store stages complete immutable snapshots, validates all pairs and global references, then atomically selects one through `CURRENT.json` under a minimal local publication guard. Read-only loaders pin that selection. The manifest is integrity/routing metadata, not a second knowledge database. Unselected leftovers are ignored; corruption and stale bases fail explicitly. Future Gold/Change Event coordination must use unselected staging and its own shared commit boundary. IntegrationPlan, semantic writing, events, retrieval and automatic orchestration remain planned. See [canonical-document decision](adr/015-canonical-gold-documents.md).
 
 The curator may apply NO_CHANGE, ENRICH, REWRITE, CREATE, MERGE, LINK, or FLAG_CONFLICT. It favors enriching equivalent knowledge over duplication and does not autonomously DELETE knowledge in V1. Source and operational metadata in Bronze and Silver remain deterministic; this restriction does not prevent semantic knowledge in Gold or transcript-based LLM source selection.
 

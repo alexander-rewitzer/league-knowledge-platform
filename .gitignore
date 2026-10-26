@@ -4,6 +4,7 @@
 /data/silver-sections/
 /data/validated-sections/
 /data/source-knowledge/
+/data/gold/
 __pycache__/
 *.py[cod]
 /.env

@@ -1,0 +1,2 @@
+# Canonical pair fixtures are compared with the renderer's exact UTF-8/LF bytes.
+tests/fixtures/gold_documents/* text eol=lf
