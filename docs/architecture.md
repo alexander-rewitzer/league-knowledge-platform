@@ -1,6 +1,6 @@
 # Architecture
 
-The Knowledge Platform is the acquisition and preparation side of an experiment on whether upstream agentic knowledge organization can reduce later multi-hop retrieval complexity and latency while preserving answer quality. League of Legends is the experimental domain. The hypothesis is unproven; the planned experiment supplements the accepted architecture below.
+The Knowledge Platform is the acquisition and preparation side of an experiment on whether upstream agentic knowledge organization can reduce later multi-hop retrieval complexity and latency while preserving answer quality. League of Legends is the experimental domain. A second question tests whether preparation needs this specialized architecture or can achieve comparable results through a generic agentic harness. Both questions are open; the planned experiment supplements the accepted architecture below.
 
 ## V1 acquisition and compilation flow
 
@@ -10,7 +10,7 @@ The architecture has three separate views. Source Acquisition integrates selecte
 | --- | --- |
 | [Source Acquisition](#source-acquisition) | Implemented target loading, discovery, integrated-ID lookup, filtering/refill, metadata ranking, transient transcripts, absolute quality assessment, deterministic gating, conditional comparison, and run-integrated Bronze persistence/registration |
 | [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Implemented Silver cleaning/segmentation, extraction, validated checkpoints, source audit and Gold document storage; planned existing-knowledge inspection, semantic integration and deterministic writing |
-| [Experimental Evaluation](#planned-comparative-evaluation) | Planned fixed-size baseline and quality/query-time-efficiency comparison |
+| [Experimental Evaluation](#planned-comparative-evaluation) | Planned controlled preparation comparison plus a separate practical live Web Search benchmark |
 
 Manually initiated sequential run orchestration is implemented through Bronze persistence and source registration, with its own SQLite progress database and immutable target snapshots. The integrated-source catalog remains separate. Run progress coordinates the existing Bronze API but remains separate from artifact storage. Curation and other future operational SQL responsibilities remain planned; the platform is not yet a completed acquisition/curation system.
 
@@ -169,25 +169,51 @@ The V1 design runs locally with filesystem Bronze/Silver/Gold artifacts and loca
 
 ## Planned comparative evaluation
 
-The experiment will compare conventional fixed-size chunking plus retrieval with agentic preparation of more structured knowledge. Both paths will use the same source material and the same previously unseen multi-hop questions. The baseline, query-time comparison, and full evaluation are not implemented. This conceptual diagram supplements the acquisition and compilation architecture; it does not replace it or imply that either approach wins.
+The research separates the value of upstream preparation from the value of a specialized preparation architecture. Neither is established. The following view supplements Source Acquisition and Knowledge Preparation; it does not change their approved contracts or claim a completed experiment.
+
+| Planned system | Preparation and role |
+| --- | --- |
+| Purpose-Built Agentic Knowledge Preparation | This repository's complete custom system: unstructured sources → acquisition → Bronze → cleaned Silver → semantic segmentation → extraction → semantic validation → source audit → cross-source Gold integration → canonical Gold → downstream retrieval/answering. The complete system is not yet implemented. |
+| Fixed-Size RAG | Conventional fixed-size chunking and standard retrieval over the same controlled source corpus; a simple preparation baseline. |
+| Generic Agentic Preparation | A capable general-purpose agent receives the same controlled corpus and a broad knowledge-base-building objective. It may inspect sources, organize/update documents, consolidate information and improve its knowledge base iteratively. It does not receive this project's specialized contracts or preparation architecture. Hermes is a candidate harness, not a mandatory dependency. |
+| Live Web Search Agent | A capable agent answers the same evaluation questions using live web search, without a dedicated prepared knowledge base. |
+
+| Comparison group | Planned systems | Purpose |
+| --- | --- | --- |
+| Controlled knowledge-preparation comparison | Fixed-Size RAG; Generic Agentic Preparation; Purpose-Built Agentic Knowledge Preparation | Isolate preparation strategy using the same curated source corpus and the same previously unseen multi-hop questions. |
+| Practical system-level benchmark | Purpose-Built Prepared Knowledge System; Live Web Search Agent | Test the practical value of maintaining prepared knowledge versus searching the open web at query time. This is not a controlled preparation ablation. |
+
+Where possible, the later controlled comparison should hold the answering model, questions, source corpus and applicable downstream retrieval infrastructure constant. The generic preparation agent must not inherit the custom KnowledgeItem contract, section-validation gates, exact source-audit lineage accounting, IntegrationPlan or specialized Gold integration rules: doing so would reproduce the architecture under test.
+
+Live Web Search changes the available information universe, source selection, retrieval mechanism, freshness and potentially source quality. It is a practical system-level benchmark and must be analyzed separately from the controlled same-corpus comparisons.
 
 ```mermaid
 flowchart TD
-    S["Same source material"] --> B["Planned fixed-size chunking baseline"]
-    S --> A["Planned agentic knowledge preparation"]
-    B --> BR["Baseline retrieval"]
-    A --> AR["Structured representation and retrieval"]
-    Q["Same previously unseen multi-hop questions"] --> BR
-    Q --> AR
-    BR --> E["Comparative evaluation"]
-    AR --> E
-    E --> K["Answer and retrieval quality"]
-    E --> T["Query-time efficiency"]
-    B -.-> P["Preparation cost and effort"]
-    A -.-> P
+    C["Same curated corpus"] --> F["Planned Fixed-Size RAG"]
+    C --> G["Planned Generic Agentic Preparation"]
+    C --> P["Purpose-Built Preparation: incomplete"]
+    F --> E["Controlled preparation comparison"]
+    G --> E
+    P --> E
+    Q["Same unseen multi-hop questions"] --> E
+    Q --> B["Separate practical system benchmark"]
+    P --> B
+    W["Live Web Search Agent: planned"] --> B
+    O["Open web: changing information universe"] --> W
 ```
 
-The evaluation will ask whether additional preparation reduces query-time complexity and latency without sacrificing answer quality. Planned dimensions include answer correctness, completeness, groundedness and relevance; retrieval recall, precision and source coverage; latency, retrieval/tool calls and reasoning steps; and preparation cost, agent iterations, validation failures, knowledge changes per source and marginal knowledge gain. These are intended measurements, not completed results or a defined benchmark protocol. See the [evaluation overview](../README.md#experimental-evaluation).
+| Workstream | Priority and scope |
+| --- | --- |
+| A — Core Knowledge System | Current priority: complete Source → canonical Gold integration. Acquisition, source preparation, the Gold contract and canonical document storage exist; semantic Gold integration and Change Events remain planned. |
+| B — Retrieval / Answering | Later: build the serving/query-time path over canonical Gold. Retrieval remains derived/rebuildable and is not implemented. |
+| C — Baselines | Later: Fixed-Size RAG, Generic Agentic Preparation and Live Web Search Agent, with the purpose-built system as the system under test. No baseline system is implemented. |
+| D — Experimental Evaluation | Later: evaluation dataset → ground truth / required evidence → experiment configuration freeze → runs → metrics → analysis. No comparative results exist. |
+
+Answer quality/groundedness, evidence retrieval, query-time latency/tool/reasoning effort and preparation effort are candidate measurement areas, not a frozen protocol or reported results. Existing raw knowledge-gain requirements are preserved.
+
+The later Baseline / Evaluation design freeze will decide chunk size and overlap; embedding model and vector store; reranking; Web Search provider/tool; generic-agent harness and prompts; tool/token budgets and search-call limits; evaluation questions and ground-truth/required-evidence construction; metric definitions and weighting; statistical tests and repetitions; and latency/cost measurement protocol. None is fixed by this framing update.
+
+See the [research questions](../README.md#research-questions) and [evaluation overview](../README.md#experimental-evaluation).
 
 ## System context and decisions
 
