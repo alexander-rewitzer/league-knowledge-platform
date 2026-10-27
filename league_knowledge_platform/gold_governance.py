@@ -146,9 +146,10 @@ def _validate_context(operation, snapshot, artifact, item_ids, declarations, lay
                  "ACTIVE_TARGET", "targets")
         return base[identity]
 
-    def result(unit, preserved=()):
+    def result(unit, preserved=(), *, source_refs=None):
         _require(set(unit.provenance) <= allowed_support, "PROVENANCE_REFERENCE", "resulting_unit.provenance")
-        required = set(operation.source_refs) | {p for old in preserved for p in old.provenance}
+        contributors = set(operation.source_refs) if source_refs is None else source_refs
+        required = contributors | {p for old in preserved for p in old.provenance}
         _require(required <= set(unit.provenance), "PROVENANCE_PRESERVATION", "resulting_unit.provenance")
         _require(all(r.target_knowledge_id in known for r in unit.relations),
                  "UNKNOWN_RELATION_TARGET", "resulting_unit.relations")
@@ -168,7 +169,14 @@ def _validate_context(operation, snapshot, artifact, item_ids, declarations, lay
 
     placements = set()
     for intent in new_intents:
-        result(intent.unit)
+        if type(operation.payload) is GoldFlagConflictPayload:
+            # Distinct claims may have distinct evidence. Operation-level refs
+            # must never be copied onto an unrelated claim as invented support.
+            contributing = set(intent.unit.provenance) & set(operation.source_refs)
+            _require(bool(contributing), "CONFLICT_SOURCE_SUPPORT", "new_claims.provenance")
+            result(intent.unit, source_refs=contributing)
+        else:
+            result(intent.unit)
         p = intent.placement
         _require(p.document_id in documents, "UNKNOWN_DOCUMENT", "placement.document_id")
         topics = {t.topic_id: t for t in documents[p.document_id].topics}
@@ -206,6 +214,10 @@ def _validate_context(operation, snapshot, artifact, item_ids, declarations, lay
         for edge in payload.contradictions:
             relation(edge)
         additions(payload.provenance_additions, payload.claim_knowledge_ids)
+        claim_support = {p for identity in payload.claim_knowledge_ids for p in known[identity].provenance}
+        claim_support.update(a.provenance for a in payload.provenance_additions)
+        _require(set(operation.source_refs) <= claim_support,
+                 "CONFLICT_SOURCE_SUPPORT", "source_refs")
     return operation
 
 

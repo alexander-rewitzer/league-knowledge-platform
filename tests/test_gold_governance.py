@@ -180,6 +180,28 @@ class GoldGovernanceTests(unittest.TestCase):
             validate(operation(), base_snapshot=snapshot)
         self.assertNotIn("Preserve", str(caught.exception))
 
+    def test_conflicting_incoming_items_keep_distinct_claim_provenance(self):
+        other = GoldProvenance(reference("B"), "source-item-000002")
+        a, b = new(3, position=0), new(4, support=other, position=1)
+        payload = GoldFlagConflictPayload((identity(3), identity(4)), (a, b),
+            (edge(3, 4, GoldRelationKind.CONTRADICTS),), (), "Conflicting source items with distinct support.")
+        op = operation(payload, GoldOperationKind.FLAG_CONFLICT, refs=(SUPPORT, other))
+        self.assertIs(validate(op, base_snapshot=GoldSnapshot(),
+            incoming_item_ids=frozenset({SUPPORT.source_item_id, other.source_item_id}),
+            proposed_layout=(layout(topics=(topic(ids=()),)),)), op)
+        self.assertEqual(a.unit.provenance, (SUPPORT,))
+        self.assertEqual(b.unit.provenance, (other,))
+
+    def test_conflict_contributors_are_accounted_for_across_existing_and_new_claims(self):
+        other = GoldProvenance(reference("B"), "source-item-000002")
+        payload = examples()[-1].payload
+        op = operation(replace(payload, provenance_additions=(GoldProvenanceAddition(identity(), other),)),
+                       GoldOperationKind.FLAG_CONFLICT, refs=(SUPPORT, other))
+        ctx = dict(incoming_item_ids=frozenset({SUPPORT.source_item_id, other.source_item_id}))
+        self.assertIs(validate(op, **ctx), op)
+        with self.assertRaises(GoldGovernanceError):
+            validate(replace(op, payload=payload), **ctx)
+
     def test_validation_has_no_storage_provider_events_or_mutation_side_effects(self):
         ctx = context()
         before = tuple((render_gold_document(d), encode_gold_document_metadata(d)) for d in ctx["base_snapshot"].documents)
