@@ -1,5 +1,19 @@
 """Local League knowledge acquisition components."""
 
+from .gold_document_models import (
+    DOCUMENT_SCHEMA_VERSION, MARKER_FORMAT_VERSION, GoldBusyError, GoldConfig,
+    GoldDocument, GoldDocumentError, GoldDocumentLayout, GoldEntity, GoldSnapshot,
+    GoldStaleBaseError, GoldStorageError, GoldTopic, GoldUnitPlacement, new_topic_id,
+)
+from .gold_documents import (
+    decode_gold_document_pair, encode_gold_document_metadata, gold_document_metadata,
+    normalize_gold_structure, render_gold_document, validate_gold_snapshot,
+)
+from .gold_store import (
+    GoldSnapshotReference, LoadedGoldSnapshot, StagedGoldSnapshot, initialize_gold_store,
+    load_gold_document, load_gold_snapshot, publish_gold_snapshot, stage_gold_snapshot,
+)
+
 from .gold_models import (
     GOLD_CONTRACT_VERSION, GOLD_SCHEMA_VERSION, GoldContractError, GoldContractState,
     GoldDocumentVersion, GoldKnowledgeUnit, GoldProvenance, GoldReferenceError,
@@ -135,6 +149,13 @@ from .segmentation import (
 from .deepseek_segmentation import DeepSeekSegmentationAdapter, DeepSeekSegmentationConfig
 
 __all__ = [
+    "DOCUMENT_SCHEMA_VERSION", "MARKER_FORMAT_VERSION", "GoldBusyError", "GoldConfig",
+    "GoldDocument", "GoldDocumentError", "GoldDocumentLayout", "GoldEntity", "GoldSnapshot",
+    "GoldStaleBaseError", "GoldStorageError", "GoldTopic", "GoldUnitPlacement", "new_topic_id",
+    "decode_gold_document_pair", "encode_gold_document_metadata", "gold_document_metadata",
+    "normalize_gold_structure", "render_gold_document", "validate_gold_snapshot",
+    "GoldSnapshotReference", "LoadedGoldSnapshot", "StagedGoldSnapshot", "initialize_gold_store",
+    "load_gold_document", "load_gold_snapshot", "publish_gold_snapshot", "stage_gold_snapshot",
     "GOLD_CONTRACT_VERSION", "GOLD_SCHEMA_VERSION", "GoldContractError", "GoldContractState",
     "GoldDocumentVersion", "GoldKnowledgeUnit", "GoldProvenance", "GoldReferenceError",
     "GoldRelation", "GoldRelationKind", "GoldSourceArtifactReference", "GoldStatus",
