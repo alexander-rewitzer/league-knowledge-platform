@@ -8,6 +8,8 @@ This repository currently builds the acquisition and knowledge-preparation side.
 
 V1 is an incremental, local-first system rather than a fixed source corpus. Its initial acquisition targets are all Champions in a versioned, machine-readable local catalog. There is no Champion × Role target matrix: role-specific guidance and reusable general concepts may emerge from selected sources and be represented in Gold. Systematic acquisition for general-concept targets is future scope.
 
+Integration governance now defines the seven allowed operation intents and deterministic structural/reference validation. These pure contracts do not implement semantic operation selection, Gold inspection, a complete IntegrationPlan, semantic Validator, deterministic Writer or Change Events. Their strict JSON codec is transient interchange only. Existing provenance/relations can be recognized without deriving mutations or audit effects; complete curation into Gold remains planned.
+
 ## Source responsibilities
 
 Riot Games Data Dragon establishes the authoritative Champion target catalog / target universe. The repository loads the committed versioned artifact locally without a runtime Riot request. This structured target source is not the main knowledge corpus. YouTube is the V1 public source pool: relevant educational knowledge is primarily in unstructured video/transcript content, with structured metadata used for discovery and ranking. Knowledge preparation starts from that source material, not a pre-structured knowledge base.
