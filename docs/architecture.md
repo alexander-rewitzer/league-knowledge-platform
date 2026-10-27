@@ -125,7 +125,25 @@ Markdown and metadata are jointly canonical. ACTIVE content is marked by stable 
 
 The local store stages complete immutable snapshots, validates all pairs and global references, then atomically selects one through `CURRENT.json` under a minimal local publication guard. Read-only loaders pin that selection. The manifest is integrity/routing metadata, not a second knowledge database. Unselected leftovers are ignored; corruption and stale bases fail explicitly. Future Gold/Change Event coordination must use unselected staging and its own shared commit boundary. IntegrationPlan, semantic writing, events, retrieval and automatic orchestration remain planned. See [canonical-document decision](adr/015-canonical-gold-documents.md).
 
-The curator may apply NO_CHANGE, ENRICH, REWRITE, CREATE, MERGE, LINK, or FLAG_CONFLICT. It favors enriching equivalent knowledge over duplication and does not autonomously DELETE knowledge in V1. Source and operational metadata in Bronze and Silver remain deterministic; this restriction does not prevent semantic knowledge in Gold or transcript-based LLM source selection.
+### Integration governance
+
+The implemented [governance layer](../README.md#gold-integration-governance) defines exactly seven transient operation contracts. NO_CHANGE represents already-covered knowledge, CREATE genuinely new knowledge, ENRICH substantive detail to the same unit, REWRITE substantive reformulation of that identity, MERGE consolidation into one existing survivor, LINK a minimal supported relation, and FLAG_CONFLICT preserved unresolved incompatibility. No autonomous DELETE or alias exists.
+
+```mermaid
+flowchart LR
+    O["Typed operation intent"] --> V["Pure structural validation"]
+    S["Trusted source references and Gold context"] --> V
+    V --> I["Structurally valid intent"]
+    R["Governance appropriateness rules"] -.-> P["Planned semantic Integration and Validator"]
+    I -.-> P
+    P -. "Semantic PASS" .-> W["Planned deterministic Writer and audit commit"]
+```
+
+Frozen models reuse Gold identity, provenance, status, relation and bounded-layout contracts. ENRICH/REWRITE preserve identity; MERGE retains an existing survivor and requires preserved provenance while future execution retains historical MERGED records. Conflicts retain distinct claims and explicit contradictions without a winner. Relations remain directional `related_to` or `contradicts`; historical addressing is not silently rewritten.
+
+Validation is pure and checks operation shape and caller-supplied references, not semantic truth. It neither searches Gold nor chooses operations, applies plans, prunes structures or emits events. Existing support/relations are recognized without deriving effects. The JSON codec is transient interchange only, with no durable operation layer. Whole-plan accounting, eight-gate semantic validation/refinement, stale-base protection, execution and coordinated Gold/event publication remain planned. NO_CHANGE with new support and literal no-mutation success retain separate future audit semantics; deterministic empty-source/replay handling belongs to integration.
+
+The curator is intended to favor enriching equivalent knowledge over duplication. Source and operational metadata in Bronze and Silver remain deterministic; this restriction does not prevent semantic knowledge in Gold or transcript-based LLM source selection.
 
 ## Local state and retrieval boundary
 

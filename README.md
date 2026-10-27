@@ -101,6 +101,7 @@ The repository implements end-to-end Source Acquisition through transient select
 | One-source consolidation, exact input accounting, seven-gate validation and reusable canonical source knowledge | [Audit](league_knowledge_platform/source_audit.py), [artifacts](league_knowledge_platform/source_knowledge.py), [API](#source-level-audit-and-refinement) |
 | Immutable Gold units, stable identities, source-item references, historical merge links and a strict in-memory codec | [Models](league_knowledge_platform/gold_models.py), [validation](league_knowledge_platform/gold_contract.py), [API](#versioned-gold-contract) |
 | Canonical Gold Markdown/metadata pairs, bounded layouts, structural pruning and atomic local snapshot publication | [Documents](league_knowledge_platform/gold_documents.py), [store](league_knowledge_platform/gold_store.py), [API](#canonical-gold-documents) |
+| Seven immutable integration operation contracts, pure structural validation and transient interchange | [Governance](league_knowledge_platform/gold_governance.py), [models](league_knowledge_platform/gold_governance_models.py), [API](#gold-integration-governance) |
 | Unseen-source filtering, refill, immutable integrated-ID snapshot, and cross-page deduplication preserving first-seen order | [Collection](league_knowledge_platform/unseen.py) |
 | Deterministic popularity/recency ranking, explicit reference time, and configurable duration eligibility through central defaults | [Ranking](league_knowledge_platform/ranking.py), [defaults](league_knowledge_platform/defaults.py) |
 | Transient acquisition of timestamped English YouTube captions, manual-English preference, and provider failure handling | [Acquisition](league_knowledge_platform/transcripts.py), [provider adapter](league_knowledge_platform/youtube_caption_provider.py) |
@@ -138,7 +139,7 @@ flowchart LR
 
 Agents produce structured intermediate artifacts. Explicit validators outside the generating agent's decision determine stage pass/fail. Failed validation returns structured feedback for corrective iteration; progression occurs only after validation succeeds. Validation is a control mechanism, not a guarantee of factual correctness.
 
-Knowledge Integration inspects relevant existing Gold knowledge and proposes governed changes while preserving provenance and contradictions. Planned operations are `NO_CHANGE`, `CREATE`, `ENRICH`, `REWRITE`, `MERGE`, `LINK`, and `FLAG_CONFLICT`. The Deterministic Writer applies validated, approved state changes. V1 excludes autonomous destructive deletion. The [Gold contract](#versioned-gold-contract) defines valid structural state and [document storage](#canonical-gold-documents) provides paired persistence; integration frameworks and integration validators remain future work.
+Knowledge Integration will inspect relevant existing Gold knowledge and propose governed changes while preserving provenance and contradictions. The implemented [governance contracts](#gold-integration-governance) define `NO_CHANGE`, `CREATE`, `ENRICH`, `REWRITE`, `MERGE`, `LINK`, and `FLAG_CONFLICT`; semantic operation selection and execution remain planned. The future Deterministic Writer applies validated, approved state changes. V1 excludes autonomous destructive deletion. The [Gold contract](#versioned-gold-contract) defines valid structural state and [document storage](#canonical-gold-documents) provides paired persistence; integration frameworks and integration validators remain future work.
 
 ## Experimental Evaluation
 
@@ -179,6 +180,7 @@ See [V1 scope](docs/scope.md), [architecture](docs/architecture.md), and the [ar
 | Implemented | Source-level audit/refinement, seven-gate validation and canonical SourceKnowledgeArtifact |
 | Implemented | Pure versioned Gold models, source-item provenance, historical identity resolution and deterministic serialization |
 | Implemented | Canonical Gold document pairs, bounded structure and atomic local snapshot storage |
+| Implemented | Integration governance contracts and pure operation validation; no semantic operation selection or execution |
 | Planned subsequent | Validated agentic curation, semantic Deterministic Writer, incremental retrieval index, and raw knowledge-change metrics |
 | Planned evaluation | Fixed-size baseline, query-time comparison, and quality/efficiency/preparation measurements |
 
@@ -584,6 +586,47 @@ loaded = load_gold_snapshot(config)  # read-only; validates complete selected st
 The store uses `CURRENT.json` and hash-checked manifests under `snapshots/<storage-id>/`. Interrupted staging stays unselected. A publication error after selector replacement can leave the new complete state visible; reload to determine the outcome. Missing/corrupt canonical files fail explicitly. There is no automatic repair, snapshot cleanup or history query. Paths are application-owned, validated against traversal/aliases/collisions and checked for symlink/junction escape. Local filesystem ownership is required.
 
 These are structural storage primitives. Source-to-Gold synthesis, semantic Writer operations, coordinated Gold/Change Event publication, index synchronization and automatic orchestration remain planned. Future coordination must stage Gold without independently publishing it ahead of required Change Events. See the [canonical-document decision](docs/adr/015-canonical-gold-documents.md).
+
+## Gold integration governance
+
+The [governance API](league_knowledge_platform/gold_governance.py) validates transient operation intents against caller-verified source references and an explicit Gold snapshot. It does not choose an operation, judge semantic truth or write Gold.
+
+| Operation | Intended meaning |
+| --- | --- |
+| `NO_CHANGE` | Incoming knowledge is already represented; supporting provenance can be proposed without changing its identity or meaning. |
+| `CREATE` | Genuinely new knowledge needs a fresh stable identity, provenance and bounded placement. |
+| `ENRICH` | Add substantive detail to the same valid knowledge identity. |
+| `REWRITE` | Reformulate accumulated knowledge of the same identity while preserving valid meaning and provenance; cosmetic editing alone is insufficient. |
+| `MERGE` | Consolidate fragmented units into one existing survivor, retaining other identities as historical MERGED records. |
+| `LINK` | Keep distinct units and express a meaningful `related_to` or `contradicts` relation. |
+| `FLAG_CONFLICT` | Preserve incompatible claims and provenance with explicit contradictions, without choosing a winner. |
+
+There is no autonomous DELETE operation or alias. Pruning empty organizational containers is separate and cannot erase knowledge or history. Semantic addresses are stable `knowledge_id` values, never paths, headings or line numbers.
+
+```python
+from league_knowledge_platform import (
+    decode_gold_operation, encode_gold_operation, validate_gold_operation,
+)
+
+# intent and the source context come from trusted application state.
+validate_gold_operation(
+    intent,
+    base_snapshot=loaded_gold.snapshot,
+    incoming_artifact=source_reference,
+    incoming_item_ids=verified_source_item_ids,
+    declared_new_units=(),
+    proposed_layout=(),
+)
+wire_bytes = encode_gold_operation(intent)
+decoded_intent = decode_gold_operation(wire_bytes)
+# Decoding checks shape only; contextual validation is still required.
+```
+
+The strict versioned codec is transient interchange/test infrastructure. It creates no operation files, canonical operation artifacts or rejected-plan store. Complete resulting units carry content and source-item provenance; upstream transcript/artifact payloads are not copied into operations. New document/topic definitions use existing bounded layout values supplied by the caller.
+
+`GOLD_GOVERNANCE_RULES` exposes reusable semantic distinctions for future integration prompts and validators. Structural checks cover IDs, target status, source membership, placement, relation closure and provenance retention. They cannot establish semantic equivalence, substantive enrichment, complete knowledge preservation or appropriate operation choice.
+
+Existing support and relations can be recognized without deriving mutation or event behavior. Future integration owns complete source-item accounting, semantic validation, snapshot staleness and deterministic execution; audit history owns actual events. `NO_CHANGE` remains an operation: later provenance additions use `PROVENANCE_ADDED`, while literal no-mutation success uses `NO_CHANGE_RECORDED`. Successful replay and deterministic empty-source processing remain planned integration responsibilities and require no fabricated operation.
 
 ## Resumable acquisition runs
 
