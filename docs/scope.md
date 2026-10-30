@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Knowledge Platform investigates whether upstream agentic knowledge preparation can reduce query-time complexity and latency for previously unseen multi-hop questions while preserving answer quality. This is a hypothesis to evaluate, not a demonstrated result. League of Legends was selected as the experimental domain for its large, evolving, interconnected knowledge space, multi-hop relationships, overlapping sources, and substantial public unstructured educational material. Additional sources can inform incremental knowledge preparation; building a League application is not the primary technical purpose.
+The Knowledge Platform investigates whether upstream agentic knowledge preparation can reduce query-time complexity and latency for previously unseen multi-hop questions while preserving answer quality. A second research question asks whether useful agentic preparation needs a purpose-built architecture or whether a capable generic preparation harness can achieve comparable results. Both are hypotheses to evaluate, not demonstrated results. League of Legends was selected as the experimental domain for its large, evolving, interconnected knowledge space, multi-hop relationships, overlapping sources, and substantial public unstructured educational material. Additional sources can inform incremental knowledge preparation; building a League application is not the primary technical purpose.
 
 This repository currently builds the acquisition and knowledge-preparation side. Implemented Source Acquisition reaches transient selection outcomes through English transcript acquisition, absolute semantic assessment, deterministic quality gating, and comparative selection only when needed. Resumable runs pass the selected source directly to Bronze and register it only after durable validation. A separate explicit operation cleans persisted Bronze into durable Silver using deterministic NFC/whitespace normalization. Semantic logical segmentation produces durable sections through a separate explicit API. Standalone LLM extraction proposes transient KnowledgeItems from one validated CONTENT section. Section validation publishes durable accepted-section checkpoints, and source audit consolidates them into canonical one-source knowledge with preserved conflicts and exact lineage. The pure Gold contract now defines stable identities, source-item references, historical merge links and deterministic in-memory validation/serialization. Canonical Gold Markdown/metadata pairs and local snapshot persistence are implemented separately. Semantic Gold integration and retrieval indexing remain planned. A separate Voice Coach may later retrieve the prepared knowledge and reason over game context supplied by the player; its application and evaluation remain separate from the knowledge-preparation experiment.
 
@@ -35,9 +35,27 @@ In the intended repeated-run flow, one run may integrate Source A, a later run e
 
 ## Future comparative evaluation
 
-A conventional fixed-size chunking plus retrieval baseline is planned and still needs implementation. It will be compared with agentically prepared, structured knowledge using the same source material and the same previously unseen multi-hop questions. Query-time comparison and full evaluation follow later, considering answer/retrieval quality, query-time efficiency, and preparation effort without assuming either approach wins.
+| Planned system | Preparation and role |
+| --- | --- |
+| Purpose-Built Agentic Knowledge Preparation | This repository's complete custom system: unstructured sources → acquisition → Bronze → cleaned Silver → semantic segmentation → extraction → semantic validation → source audit → cross-source Gold integration → canonical Gold → downstream retrieval/answering. The complete system is not yet implemented. |
+| Fixed-Size RAG | Conventional fixed-size chunking and standard retrieval over the same controlled source corpus; a simple preparation baseline. |
+| Generic Agentic Preparation | A capable general-purpose agent receives the same controlled corpus and a broad knowledge-base-building objective. It may inspect sources, organize/update documents, consolidate information and improve its knowledge base iteratively. It does not receive this project's specialized contracts or preparation architecture. Hermes is a candidate harness, not a mandatory dependency. |
+| Live Web Search Agent | A capable agent answers the same evaluation questions using live web search, without a dedicated prepared knowledge base. |
 
-The planned experiment supplements the accepted preparation architecture. Neither the baseline nor evaluation logic is implemented, and no latency reduction has been measured. Existing raw knowledge-gain requirements remain part of the V1 target scope; they are not completed evaluation results.
+| Comparison group | Planned systems | Purpose |
+| --- | --- | --- |
+| Controlled knowledge-preparation comparison | Fixed-Size RAG; Generic Agentic Preparation; Purpose-Built Agentic Knowledge Preparation | Isolate preparation strategy using the same curated source corpus and the same previously unseen multi-hop questions. |
+| Practical system-level benchmark | Purpose-Built Prepared Knowledge System; Live Web Search Agent | Test the practical value of maintaining prepared knowledge versus searching the open web at query time. This is not a controlled preparation ablation. |
+
+Where possible, the later controlled comparison should hold the answering model, questions, source corpus and applicable downstream retrieval infrastructure constant. The generic preparation agent must not inherit the custom KnowledgeItem contract, section-validation gates, exact source-audit lineage accounting, IntegrationPlan or specialized Gold integration rules: doing so would reproduce the architecture under test.
+
+Live Web Search changes the available information universe, source selection, retrieval mechanism, freshness and potentially source quality. It is a practical system-level benchmark and must be analyzed separately from the controlled same-corpus comparisons.
+
+The active implementation priority remains completing Source → canonical Gold integration. Retrieval/Answering, Baselines and Experimental Evaluation follow as separate downstream workstreams; no baseline or evaluation implementation is added to the active Core Pipeline scope. The deployed acquisition system may grow incrementally, while the controlled experiment will use an explicitly curated shared corpus.
+
+The later Baseline / Evaluation design freeze will decide chunk size and overlap; embedding model and vector store; reranking; Web Search provider/tool; generic-agent harness and prompts; tool/token budgets and search-call limits; evaluation questions and ground-truth/required-evidence construction; metric definitions and weighting; statistical tests and repetitions; and latency/cost measurement protocol. None is fixed by this framing update.
+
+No experimental results or latency reduction are established. Existing raw knowledge-gain requirements remain part of the accepted target scope and are not completed evaluation results.
 
 ## Outside V1
 
