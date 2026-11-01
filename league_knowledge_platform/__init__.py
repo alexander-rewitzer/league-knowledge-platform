@@ -1,5 +1,18 @@
 """Local League knowledge acquisition components."""
 
+from .gold_governance_models import (
+    GOVERNANCE_CONTRACT_VERSION, OPERATION_SCHEMA_VERSION, GoldCreatePayload,
+    GoldEnrichPayload, GoldFlagConflictPayload, GoldGovernanceError,
+    GoldIntegrationOperation, GoldLinkPayload, GoldMergePayload, GoldNewUnitIntent,
+    GoldNoChangePayload, GoldOperationKind, GoldPlacementIntent, GoldProvenanceAddition,
+    GoldRelationIntent, GoldRewritePayload,
+)
+from .gold_governance import (
+    GOLD_GOVERNANCE_RULES, GoldGovernanceRule, decode_gold_operation,
+    encode_gold_operation, gold_operation_document, validate_gold_operation,
+    validate_gold_operation_shape,
+)
+
 from .gold_document_models import (
     DOCUMENT_SCHEMA_VERSION, MARKER_FORMAT_VERSION, GoldBusyError, GoldConfig,
     GoldDocument, GoldDocumentError, GoldDocumentLayout, GoldEntity, GoldSnapshot,
@@ -149,6 +162,13 @@ from .segmentation import (
 from .deepseek_segmentation import DeepSeekSegmentationAdapter, DeepSeekSegmentationConfig
 
 __all__ = [
+    "GOVERNANCE_CONTRACT_VERSION", "OPERATION_SCHEMA_VERSION", "GoldCreatePayload",
+    "GoldEnrichPayload", "GoldFlagConflictPayload", "GoldGovernanceError",
+    "GoldIntegrationOperation", "GoldLinkPayload", "GoldMergePayload", "GoldNewUnitIntent",
+    "GoldNoChangePayload", "GoldOperationKind", "GoldPlacementIntent", "GoldProvenanceAddition",
+    "GoldRelationIntent", "GoldRewritePayload", "GOLD_GOVERNANCE_RULES", "GoldGovernanceRule",
+    "decode_gold_operation", "encode_gold_operation", "gold_operation_document",
+    "validate_gold_operation", "validate_gold_operation_shape",
     "DOCUMENT_SCHEMA_VERSION", "MARKER_FORMAT_VERSION", "GoldBusyError", "GoldConfig",
     "GoldDocument", "GoldDocumentError", "GoldDocumentLayout", "GoldEntity", "GoldSnapshot",
     "GoldStaleBaseError", "GoldStorageError", "GoldTopic", "GoldUnitPlacement", "new_topic_id",
