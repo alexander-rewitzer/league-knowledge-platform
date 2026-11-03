@@ -20,6 +20,13 @@ from league_knowledge_platform import defaults, models
 
 
 class DefaultsTests(unittest.TestCase):
+    def test_inspection_search_defaults_are_central_and_nonsecret(self):
+        from league_knowledge_platform import GoldInspection
+        self.assertEqual(defaults.GOLD_INSPECTION_SEARCH_LIMIT, 20)
+        self.assertEqual(defaults.GOLD_INSPECTION_MAX_PAGE_LIMIT, 100)
+        self.assertEqual(inspect.signature(GoldInspection.search_gold).parameters["limit"].default,
+                         defaults.GOLD_INSPECTION_SEARCH_LIMIT)
+
     def test_service_defaults_are_discoverable_and_keep_existing_contracts(self):
         self.assertEqual(GoldConfig().root, Path(defaults.GOLD_ROOT).absolute())
         self.assertEqual(DEFAULT_SOURCE_AUDIT_CONFIG.root, defaults.SOURCE_KNOWLEDGE_ROOT)

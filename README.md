@@ -107,6 +107,7 @@ The repository implements end-to-end Source Acquisition through transient select
 | Immutable Gold units, stable identities, source-item references, historical merge links and a strict in-memory codec | [Models](league_knowledge_platform/gold_models.py), [validation](league_knowledge_platform/gold_contract.py), [API](#versioned-gold-contract) |
 | Canonical Gold Markdown/metadata pairs, bounded layouts, structural pruning and atomic local snapshot publication | [Documents](league_knowledge_platform/gold_documents.py), [store](league_knowledge_platform/gold_store.py), [API](#canonical-gold-documents) |
 | Seven immutable integration operation contracts, pure structural validation and transient interchange | [Governance](league_knowledge_platform/gold_governance.py), [models](league_knowledge_platform/gold_governance_models.py), [API](#gold-integration-governance) |
+| Snapshot-bound read-only Gold unit/document/topic/provenance inspection and bounded lexical search | [Inspection](league_knowledge_platform/gold_inspection.py), [API](#read-only-gold-inspection) |
 | Unseen-source filtering, refill, immutable integrated-ID snapshot, and cross-page deduplication preserving first-seen order | [Collection](league_knowledge_platform/unseen.py) |
 | Deterministic popularity/recency ranking, explicit reference time, and configurable duration eligibility through central defaults | [Ranking](league_knowledge_platform/ranking.py), [defaults](league_knowledge_platform/defaults.py) |
 | Transient acquisition of timestamped English YouTube captions, manual-English preference, and provider failure handling | [Acquisition](league_knowledge_platform/transcripts.py), [provider adapter](league_knowledge_platform/youtube_caption_provider.py) |
@@ -125,7 +126,7 @@ The platform as a whole remains in development. Standalone extraction produces t
 
 The planned curator has two logical AI stages, **Knowledge Extraction** and **Knowledge Integration**, followed by a **Deterministic Writer**. Standalone extraction, section-level validation/refinement and source audit are implemented; complete curation into Gold remains planned within the accepted Knowledge Platform architecture.
 
-Its downstream architecture is **Bronze → deterministic Silver Cleaning → semantic logical segmentation → Knowledge Extraction proposals → section-level semantic validation/checkpoints → Source-Level Audit → SourceKnowledgeArtifact → planned Existing-Knowledge Inspection → Knowledge Integration → Updated Structured Knowledge Base**. Bronze retains the selected raw source. Silver segmentation is the single semantic SEGMENT stage; extraction consumes validated CONTENT sections without segmenting again. Source audit produces one-source knowledge; subsequent Gold processing remains planned. See the separate [curation architecture](docs/architecture.md#knowledge-layers-and-curator).
+Its downstream architecture is **Bronze → deterministic Silver Cleaning → semantic logical segmentation → Knowledge Extraction proposals → section-level semantic validation/checkpoints → Source-Level Audit → SourceKnowledgeArtifact → Existing-Knowledge Inspection → planned Knowledge Integration → Updated Structured Knowledge Base**. Bronze retains the selected raw source. Silver segmentation is the single semantic SEGMENT stage; extraction consumes validated CONTENT sections without segmenting again. Source audit produces one-source knowledge; read-only Gold inspection is available independently, while semantic integration remains planned. See the separate [curation architecture](docs/architecture.md#knowledge-layers-and-curator).
 
 The standalone [Knowledge Extraction API](#transient-knowledge-extraction) implements EXTRACT and returns transient proposals. The preparation flow includes implemented EXTRACT, section-level VALIDATE and source-wide audit/refinement:
 
@@ -202,6 +203,7 @@ See [V1 scope](docs/scope.md), [architecture](docs/architecture.md), and the [ar
 | Implemented | Pure versioned Gold models, source-item provenance, historical identity resolution and deterministic serialization |
 | Implemented | Canonical Gold document pairs, bounded structure and atomic local snapshot storage |
 | Implemented | Integration governance contracts and pure operation validation; no semantic operation selection or execution |
+| Implemented | Read-only canonical Gold inspection and lexical candidate search bound to one validated snapshot |
 | Planned subsequent | Validated agentic curation, semantic Deterministic Writer, incremental retrieval index, and raw knowledge-change metrics |
 | Planned evaluation | Fixed-size baseline, query-time comparison, and quality/efficiency/preparation measurements |
 | Planned — Core completion | Gold Integration, semantic Deterministic Writer, Change Events and raw knowledge-change metrics |
@@ -659,6 +661,35 @@ The strict versioned codec is transient interchange/test infrastructure. It crea
 `GOLD_GOVERNANCE_RULES` exposes reusable semantic distinctions for future integration prompts and validators. Structural checks cover IDs, target status, source membership, placement, relation closure and provenance retention. They cannot establish semantic equivalence, substantive enrichment, complete knowledge preservation or appropriate operation choice.
 
 Existing support and relations can be recognized without deriving mutation or event behavior. Future integration owns complete source-item accounting, semantic validation, snapshot staleness and deterministic execution; audit history owns actual events. `NO_CHANGE` remains an operation: later provenance additions use `PROVENANCE_ADDED`, while literal no-mutation success uses `NO_CHANGE_RECORDED`. Successful replay and deterministic empty-source processing remain planned integration responsibilities and require no fabricated operation.
+
+## Read-only Gold inspection
+
+The [inspection API](league_knowledge_platform/gold_inspection.py) opens an existing canonical Gold store through the validated document reader. One immutable session holds the selected snapshot in memory; every result carries its `GoldSnapshotReference`. It provides inspection context for future integration, without choosing operations or writing Gold.
+
+```python
+from league_knowledge_platform import GoldConfig, open_gold_inspection
+
+inspection = open_gold_inspection(GoldConfig("data/gold"))
+page = inspection.search_gold("Charm wave", limit=20)
+for match in page.matches:
+    print(match.unit.unit.knowledge_id, match.unit.unit.status.value)
+
+if page.matches:
+    knowledge_id = page.matches[0].unit.unit.knowledge_id
+    unit = inspection.get_gold_unit(knowledge_id)
+    provenance = inspection.get_gold_provenance(knowledge_id)
+structure = inspection.inspect_gold_structure(entity_namespace="champions", entity_key="ahri")
+```
+
+Additional methods inspect a document by `document_id` and a topic by `(document_id, topic_id)`. Direct lookups return explicit not-found errors for absent valid IDs. Malformed requests have a separate request-error type. A valid empty store returns empty search/structure results; a missing or corrupt store fails without initialization, seed files or repair.
+
+Search scans content, entity/document/topic context, stable identities, status, relations and source-item reference metadata. Matching uses NFC/case-folded Unicode tokens in searchable copies; canonical text is unchanged. Distinct matching query tokens order results, with stable knowledge ID as the tie-breaker. IDs remain atomic tokens. There is no stemming, semantic inference or provider call. Exact optional entity/domain/document/topic/status filters combine with AND; global search includes independent concepts and Champion-associated knowledge.
+
+Pages default to 20 units, allow at most 100, and support `offset`, `total_matches` and `has_more`. Limits live in [central defaults](league_knowledge_platform/defaults.py). Blank or unmatched queries return no matches. Full unit content is preserved: the unit-count bound is not a model-token budget, and lexical matches do not establish semantic equivalence or complete coverage.
+
+ACTIVE and historical MERGED records are included unless explicitly filtered. Historical lookup returns the requested original record and its merge link, never a silent survivor substitution. Historical records identify their containing survivor document and have no current topic placement. Provenance and directional relations are unchanged; no upstream artifacts or transcripts are fetched. Structure inspection returns metadata/IDs in the bounded hierarchy, retaining stored entity display labels rather than normalizing them.
+
+A session never refreshes `CURRENT.json`. If another operation publishes Gold Y, the existing session and its pagination still describe Gold X; open a new session to inspect Y. Future integration must bind its plan to this reference and verify the expected base before writing. No stale-plan handling, semantic Agent/Validator/Writer, Change Events, persistent index or answer-time Retrieval system is implemented by this API.
 
 ## Resumable acquisition runs
 
