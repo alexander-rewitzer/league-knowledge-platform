@@ -1,5 +1,13 @@
 """Local League knowledge acquisition components."""
 
+from .gold_inspection_models import (
+    GoldDocumentStructure, GoldEntityStructure, GoldInspectionError,
+    GoldInspectionNotFoundError, GoldInspectionRequestError, GoldInspectionResult,
+    GoldProvenanceView, GoldSearchMatch, GoldSearchPage, GoldStructureView,
+    GoldTopicContext, GoldTopicStructure, GoldTopicView, GoldUnitView,
+)
+from .gold_inspection import GoldInspection, open_gold_inspection
+
 from .gold_governance_models import (
     GOVERNANCE_CONTRACT_VERSION, OPERATION_SCHEMA_VERSION, GoldCreatePayload,
     GoldEnrichPayload, GoldFlagConflictPayload, GoldGovernanceError,
@@ -162,6 +170,10 @@ from .segmentation import (
 from .deepseek_segmentation import DeepSeekSegmentationAdapter, DeepSeekSegmentationConfig
 
 __all__ = [
+    "GoldDocumentStructure", "GoldEntityStructure", "GoldInspection", "GoldInspectionError",
+    "GoldInspectionNotFoundError", "GoldInspectionRequestError", "GoldInspectionResult",
+    "GoldProvenanceView", "GoldSearchMatch", "GoldSearchPage", "GoldStructureView",
+    "GoldTopicContext", "GoldTopicStructure", "GoldTopicView", "GoldUnitView", "open_gold_inspection",
     "GOVERNANCE_CONTRACT_VERSION", "OPERATION_SCHEMA_VERSION", "GoldCreatePayload",
     "GoldEnrichPayload", "GoldFlagConflictPayload", "GoldGovernanceError",
     "GoldIntegrationOperation", "GoldLinkPayload", "GoldMergePayload", "GoldNewUnitIntent",
