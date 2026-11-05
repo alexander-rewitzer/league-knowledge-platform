@@ -135,4 +135,3 @@ class IntegrationInspection:
             visit(gold_operation_document(operation))
         for identity in sorted(targets - self.__documents):
             self.query("get_gold_document", document_id=identity)
-

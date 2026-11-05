@@ -8,9 +8,9 @@ import unittest
 from unittest.mock import patch
 
 from league_knowledge_platform import (
-    GoldConfig, GoldContractError, GoldSnapshot, GoldStatus, IntegrationConfig, IntegrationError, 
-    IntegrationGate, IntegrationOperationalError, IntegrationValidationFailed, IntegrationVerdict, 
-    SourceKnowledgeOutcome, initialize_gold_store, load_gold_snapshot, prepare_gold_integration, 
+    GoldConfig, GoldContractError, GoldSnapshot, GoldStatus, IntegrationConfig, IntegrationError,
+    IntegrationGate, IntegrationOperationalError, IntegrationValidationFailed, IntegrationVerdict,
+    SourceKnowledgeOutcome, initialize_gold_store, load_gold_snapshot, prepare_gold_integration,
     publish_gold_snapshot, stage_gold_snapshot, validate_prepared_integration,
 )
 from league_knowledge_platform import _gold_filesystem as fs
@@ -193,4 +193,3 @@ class PreparationTests(unittest.TestCase):
         self.run_prepare();self.run_prepare()
         self.assertEqual(len(self.agent.calls),2)
         self.assertEqual(load_gold_snapshot(self.gold).reference,self.reference)
-

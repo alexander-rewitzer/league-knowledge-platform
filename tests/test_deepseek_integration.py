@@ -159,4 +159,3 @@ class DeepSeekIntegrationTests(unittest.TestCase):
                 self.assertEqual(adapter.propose(self.request).metadata.requested_model,'runtime-model')
             self.assertIsNone(adapter._api_key);self.assertTrue(http.closed)
             with self.assertRaises(GoldContractError):adapter.propose(self.request)
-

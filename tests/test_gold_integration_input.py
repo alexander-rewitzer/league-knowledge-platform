@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from league_knowledge_platform import (
-    GoldConfig, GoldSnapshot, IntegrationOperationalError, canonical_silver_path, 
+    GoldConfig, GoldSnapshot, IntegrationOperationalError, canonical_silver_path,
     initialize_gold_store, load_gold_snapshot, prepare_gold_integration, process_source_knowledge,
 )
 from league_knowledge_platform.gold_integration_input import load_integration_source
@@ -64,4 +64,3 @@ class InputIntegrationTests(unittest.TestCase):
             silver=canonical_silver_path('B',configs['silver_config'])
             silver.write_bytes(silver.read_bytes()+b' ')
             with self.assertRaises(IntegrationOperationalError):prepare_gold_integration('B',gold_config=gold,**configs)
-

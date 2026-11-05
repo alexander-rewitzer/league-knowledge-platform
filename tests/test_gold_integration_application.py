@@ -4,8 +4,8 @@ from dataclasses import replace
 import unittest
 
 from league_knowledge_platform import (
-    GoldContractError, GoldEnrichPayload, GoldLinkPayload, GoldNoChangePayload, GoldOperationKind, 
-    GoldProvenanceAddition, GoldRelation, GoldRelationIntent, GoldRelationKind, GoldRewritePayload, 
+    GoldContractError, GoldEnrichPayload, GoldLinkPayload, GoldNoChangePayload, GoldOperationKind,
+    GoldProvenanceAddition, GoldRelation, GoldRelationIntent, GoldRelationKind, GoldRewritePayload,
     GoldSnapshot, GoldStatus, IntegrationError, validate_gold_snapshot,
 )
 from league_knowledge_platform.gold_application import apply_integration_plan, integration_effects, logical_gold_hash
@@ -125,4 +125,3 @@ class ApplicationTests(unittest.TestCase):
         candidate=apply(p,base)
         self.assertEqual(candidate.documents[0].document_version,2)
         self.assertEqual(candidate.documents[1],second)
-
