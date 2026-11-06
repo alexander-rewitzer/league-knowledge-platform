@@ -1,5 +1,16 @@
 """Local League knowledge acquisition components."""
 
+from .gold_integration_models import (
+    IntegrationConfig, IntegrationPlan, IntegrationIssue, IntegrationGate,
+    IntegrationVerdict, IntegrationGateEvaluation, IntegrationEvaluation,
+    IntegrationRound, IntegrationAgentRequest, IntegrationValidatorRequest,
+    IntegrationError, IntegrationOperationalError, IntegrationValidationFailed,
+    PreparedIntegrationResult,
+)
+from .gold_integration import prepare_gold_integration, validate_prepared_integration
+from .deepseek_integration import DeepSeekIntegrationConfig, DeepSeekIntegrationAgent, DeepSeekIntegrationValidator
+
+
 from .gold_inspection_models import (
     GoldDocumentStructure, GoldEntityStructure, GoldInspectionError,
     GoldInspectionNotFoundError, GoldInspectionRequestError, GoldInspectionResult,
@@ -170,6 +181,12 @@ from .segmentation import (
 from .deepseek_segmentation import DeepSeekSegmentationAdapter, DeepSeekSegmentationConfig
 
 __all__ = [
+    "IntegrationConfig", "IntegrationPlan", "IntegrationIssue", "IntegrationGate",
+    "IntegrationVerdict", "IntegrationGateEvaluation", "IntegrationEvaluation",
+    "IntegrationRound", "IntegrationAgentRequest", "IntegrationValidatorRequest",
+    "IntegrationError", "IntegrationOperationalError", "IntegrationValidationFailed",
+    "PreparedIntegrationResult", "prepare_gold_integration", "validate_prepared_integration",
+    "DeepSeekIntegrationConfig", "DeepSeekIntegrationAgent", "DeepSeekIntegrationValidator",
     "GoldDocumentStructure", "GoldEntityStructure", "GoldInspection", "GoldInspectionError",
     "GoldInspectionNotFoundError", "GoldInspectionRequestError", "GoldInspectionResult",
     "GoldProvenanceView", "GoldSearchMatch", "GoldSearchPage", "GoldStructureView",
