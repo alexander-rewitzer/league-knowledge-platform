@@ -4,7 +4,7 @@ from dataclasses import dataclass, field, replace
 from hashlib import sha256
 
 from .gold_contract import validate_gold_state
-from .gold_document_models import GoldDocumentLayout, GoldSnapshot
+from .gold_document_models import GoldDocumentLayout, GoldSnapshot, GoldUnitPlacement
 from .gold_documents import (normalize_gold_structure, validate_gold_snapshot, validate_document_transition,
     gold_document_metadata, render_gold_document, encode_gold_document_metadata, decode_gold_document_pair)
 from .gold_governance import validate_gold_operation, _new_intents
@@ -64,6 +64,55 @@ def validate_integration_plan(plan, *, base, source_reference, source_item_ids, 
     return plan
 
 
+def _versioned_candidate(snapshot, base):
+    old_docs = {d.document_id: d for d in base.documents}
+    documents = []
+    for document in snapshot.documents:
+        old = old_docs.get(document.document_id)
+        version = 1
+        if old is not None:
+            before, after = gold_document_metadata(old), gold_document_metadata(document)
+            before.pop("document_version")
+            after.pop("document_version")
+            version = old.document_version + (before != after)
+        documents.append(replace(document, version=replace(document.version, document_version=version)))
+    return GoldSnapshot(tuple(documents))
+
+
+def _validate_candidate_delta(plan, base, state, candidate):
+    """Reconstruct authorized structure independently of arbitrary layout overrides.
+
+    Unit changes have already been applied from the validated operation payloads.
+    Existing organizational identity/metadata/positions are preserved. Only new
+    unit declarations can introduce their required containers and placements;
+    retirement/pruning follows the same authoritative unit state and #51 rules.
+    Never repair an unauthorized candidate by returning this expected state.
+    """
+    active = {u.knowledge_id for u in state.units if u.status is GoldStatus.ACTIVE}
+    documents = {d.document_id: document_layout(d) for d in base.documents}
+    topics = {(d.document_id, t.topic_id): t for d in base.documents for t in d.topics}
+    placements = {key: [p for p in t.units if p.knowledge_id in active] for key, t in topics.items()}
+    proposed = {d.document_id: d for d in plan.proposed_layout}
+    for operation in plan.operations:
+        for intent in _new_intents(operation.payload):
+            p = intent.placement
+            if p.document_id not in documents:
+                documents[p.document_id] = replace(proposed[p.document_id], topics=())
+            key = (p.document_id, p.topic_id)
+            if key not in topics:
+                topics[key] = next(t for t in proposed[p.document_id].topics if t.topic_id == p.topic_id)
+                placements[key] = []
+            placements[key].append(GoldUnitPlacement(intent.unit.knowledge_id, p.position))
+    # Filter retired/empty containers before constructing bounded layouts so a
+    # valid new placement may reuse a position freed by an accepted MERGE.
+    layouts = tuple(replace(document, topics=tuple(
+        replace(topic, units=tuple(placements[key]))
+        for key, topic in topics.items() if key[0] == document.document_id and placements[key]))
+        for document in documents.values())
+    expected = _versioned_candidate(normalize_gold_structure(state, layouts), base)
+    require(candidate == expected, "UNACCOUNTED_CANONICAL_DELTA")
+
+
 def apply_integration_plan(plan, *, base, source_reference, source_item_ids, base_reference):
     """The caller obtains semantic PASS first. This function makes no semantic judgment."""
     validate_integration_plan(plan, base=base, source_reference=source_reference,
@@ -106,18 +155,9 @@ def apply_integration_plan(plan, *, base, source_reference, source_item_ids, bas
         document_version=old_docs[identity].document_version if identity in old_docs else 1))
         for identity, layout in layouts.items()}
     candidate = normalize_gold_structure(state, tuple(layouts.values()))
-    documents = []
-    for document in candidate.documents:
-        old = old_docs.get(document.document_id)
-        version = 1
-        if old is not None:
-            before, after = gold_document_metadata(old), gold_document_metadata(document)
-            before.pop("document_version")
-            after.pop("document_version")
-            version = old.document_version + (before != after)
-        documents.append(replace(document, version=replace(document.version, document_version=version)))
-    candidate = GoldSnapshot(tuple(documents))
+    candidate = _versioned_candidate(candidate, base)
     validate_document_transition(base, candidate)
+    _validate_candidate_delta(plan, base, state, candidate)
     for document in candidate.documents:
         require(decode_gold_document_pair(render_gold_document(document), encode_gold_document_metadata(document))
                 == document, "CANDIDATE_PAIR")

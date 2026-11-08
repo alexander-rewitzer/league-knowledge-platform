@@ -118,10 +118,10 @@ class ApplicationTests(unittest.TestCase):
         op=operation(GoldLinkPayload(GoldRelationIntent(identity(),GoldRelation(GoldRelationKind.RELATED_TO,identity(99)))),GoldOperationKind.LINK)
         with self.assertRaises(GoldContractError): apply(plan(operations=(op,)))
 
-    def test_layout_reorganization_versions_only_affected_documents(self):
+    def test_unaccounted_layout_reorganization_is_rejected(self):
         second=document(2,topics=(topic(2,ids=(4,)),),units=(unit(4),),domain='macro')
         base=GoldSnapshot(BASE.documents+(second,))
         p=replace(plan(),proposed_layout=(replace(layout(),title='Updated organization'),))
-        candidate=apply(p,base)
-        self.assertEqual(candidate.documents[0].document_version,2)
-        self.assertEqual(candidate.documents[1],second)
+        with self.assertRaises(IntegrationError) as caught:
+            apply(p,base)
+        self.assertEqual(caught.exception.code,"UNACCOUNTED_CANONICAL_DELTA")
