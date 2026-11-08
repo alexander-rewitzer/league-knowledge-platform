@@ -333,6 +333,73 @@ class CommitTests(unittest.TestCase):
         self.assertEqual(len(record.effects.provenance_additions), len(original_support)+1)
         self.assertEqual(load_gold_history(self.gold).integrations, (record,))
 
+    def test_valid_prepared_result_may_use_full_incoming_artifact_support(self):
+        incoming = source('source-item-000001', 'source-item-000002')
+        second = replace(SUPPORT, source_item_id='source-item-000002')
+        create = examples()[1]
+        create = replace(create, payload=replace(create.payload, new_unit=replace(create.payload.new_unit,
+            unit=replace(create.payload.new_unit.unit, provenance=(SUPPORT, second)))))
+        covered = replace(operation(refs=(second,)), operation_id='op-2')
+        def propose(request):
+            return plan(1, operations=(create, covered), base_reference=request.inspection.reference,
+                        source_reference=request.source.reference)
+        with patch('league_knowledge_platform.gold_integration.load_integration_source', return_value=incoming), \
+                patch('league_knowledge_platform.gold_commit.load_integration_source', return_value=incoming):
+            prepared = self.prepare(propose)
+            record = self.commit(prepared).integration
+        self.assertEqual(record.operations[0].source_item_ids, ('source-item-000001',))
+        created = next(e for e in record.events if e.event_type is GoldEventType.KNOWLEDGE_CREATED)
+        self.assertEqual(created.source_item_ids, ('source-item-000001', 'source-item-000002'))
+        self.assertEqual(record.effects.source_item_accounting,
+            (('source-item-000001', ('op-1',)), ('source-item-000002', ('op-2',))))
+        self.assertEqual(load_gold_history(self.gold).integrations, (record,))
+
+    def test_rehashed_history_cannot_fabricate_conflict_from_create_without_claim_edges(self):
+        from league_knowledge_platform.gold_events import derive_gold_events, audited_effects
+        from league_knowledge_platform.gold_history_codec import document as record_document
+        prepared = self.prepare(1)
+        record = self.commit(prepared).integration
+        selector_path = self.gold.root/'CURRENT.json'
+        selector = json.loads(selector_path.read_bytes())
+        path = self.gold.root/'history'/f"{selector['integration_history']['commit_id']}.json"
+        node = json.loads(path.read_bytes())
+        for claims in ((identity(3),), (identity(), identity(3))):
+            fake = replace(record.operations[0], kind=GoldOperationKind.FLAG_CONFLICT,
+                           affected_knowledge_ids=claims, conflict_reason='Fabricated conflict')
+            invalid = replace(record, operations=(fake,), effects=audited_effects(
+                prepared.base_snapshot, prepared.candidate_snapshot, (fake,), record.source_item_ids), events=())
+            invalid = replace(invalid, events=derive_gold_events(invalid, prepared.base_snapshot, prepared.candidate_snapshot))
+            self.assertIn(GoldEventType.CONFLICT_FLAGGED, {e.event_type for e in invalid.events})
+            node['integration'] = record_document(invalid)
+            content = encode_history(node)
+            path.write_bytes(content)
+            selector['integration_history']['sha256'] = sha256(content).hexdigest()
+            selector_path.write_bytes(encode_history(selector))
+            with self.subTest(claims=claims), self.assertRaises(GoldHistoryError):
+                load_gold_history(self.gold)
+
+    def test_rehashed_history_cannot_duplicate_complete_replacement_operation(self):
+        from league_knowledge_platform.gold_events import derive_gold_events, audited_effects
+        from league_knowledge_platform.gold_history_codec import document as record_document
+        prepared = self.prepare(2)
+        record = self.commit(prepared).integration
+        operations = record.operations + (replace(record.operations[0], operation_id='op-2'),)
+        invalid = replace(record, operations=operations, effects=audited_effects(
+            prepared.base_snapshot, prepared.candidate_snapshot, operations, record.source_item_ids), events=())
+        invalid = replace(invalid, events=derive_gold_events(invalid, prepared.base_snapshot, prepared.candidate_snapshot))
+        selector_path = self.gold.root/'CURRENT.json'
+        selector = json.loads(selector_path.read_bytes())
+        path = self.gold.root/'history'/f"{selector['integration_history']['commit_id']}.json"
+        node = json.loads(path.read_bytes())
+        node['integration'] = record_document(invalid)
+        content = encode_history(node)
+        path.write_bytes(content)
+        selector['integration_history']['sha256'] = sha256(content).hexdigest()
+        selector_path.write_bytes(encode_history(selector))
+        with self.assertRaises(GoldHistoryError) as caught:
+            load_gold_history(self.gold)
+        self.assertEqual(caught.exception.code, 'OVERLAPPING_RESULTS')
+
     def test_subprocess_interruption_before_or_after_selector_and_restart(self):
         script = '''
 import os, sys

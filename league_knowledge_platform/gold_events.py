@@ -6,9 +6,9 @@ from types import SimpleNamespace
 from .gold_application import integration_effects, _validate_candidate_delta
 from .gold_documents import validate_gold_snapshot
 from .gold_governance import _new_intents
-from .gold_governance_models import (GoldOperationKind, GoldCreatePayload, GoldNewUnitIntent,
+from .gold_governance_models import (GoldOperationKind, GoldCreatePayload, GoldNewUnitIntent, GoldFlagConflictPayload,
                                     GoldProvenanceAddition, GoldRelationIntent)
-from .gold_models import GoldContractState, GoldStatus, GoldProvenance
+from .gold_models import GoldContractState, GoldStatus, GoldProvenance, GoldRelationKind
 from .gold_history_models import (
     GoldChangeEvent, GoldEventType as Event, GoldOperationAudit, GoldCreatedPlacement,
     check,
@@ -80,6 +80,7 @@ def validate_audited_state(record, base, candidate):
     check(all(set(o.affected_knowledge_ids) <= set(after) for o in record.operations), "OPERATION_TARGET")
     placements = tuple(n for o in record.operations for n in o.new_placements)
     base_support = {p for unit in before.values() for p in unit.provenance}
+    incoming_support = {GoldProvenance(record.source_reference, item) for item in record.source_item_ids}
     check(len({n.knowledge_id for n in placements}) == len(placements)
           and {n.knowledge_id for n in placements} == set(after) - set(before), "CREATION_ACCOUNTING")
     for identity, old in before.items():
@@ -96,14 +97,21 @@ def validate_audited_state(record, base, candidate):
             check(old.content == new.content and old.status == new.status and old.merged_into == new.merged_into, "MERGED_HISTORY")
     retired = {i for i in before if before[i].status is GoldStatus.ACTIVE and after[i].status is GoldStatus.MERGED}
     check(retired == {i for o in record.operations for i in o.merged_ids}, "MERGE_ACCOUNTING")
+    writers = set()
     for o in record.operations:
+        check(bool(o.affected_knowledge_ids), "OPERATION_TARGET")
+        if o.kind in (GoldOperationKind.ENRICH, GoldOperationKind.REWRITE, GoldOperationKind.MERGE):
+            check(not writers.intersection(o.affected_knowledge_ids), "OVERLAPPING_RESULTS")
+            writers.update(o.affected_knowledge_ids)
         check(set(n.knowledge_id for n in o.new_placements) <= set(o.affected_knowledge_ids), "CREATION_ACCOUNTING")
         check(all(s.knowledge_id in o.affected_knowledge_ids for s in o.support), "SUPPORT_AUTHORITY")
         check(o.kind is not GoldOperationKind.LINK or not o.support, "SUPPORT_AUTHORITY")
         check(o.kind is not GoldOperationKind.NO_CHANGE or not o.relations, "RELATION_AUTHORITY")
         check(all(r.source_knowledge_id in o.affected_knowledge_ids for r in o.relations), "RELATION_AUTHORITY")
         incoming = {GoldProvenance(record.source_reference, item) for item in o.source_item_ids}
-        check(all(s.provenance in incoming or s.provenance in base_support for s in o.support), "SUPPORT_SOURCE")
+        # Resulting units may use the entire admitted incoming artifact, as in
+        # governance. Explicit additions to existing units remain operation-bound.
+        check(all(s.provenance in incoming_support or s.provenance in base_support for s in o.support), "SUPPORT_SOURCE")
         new_ids = {n.knowledge_id for n in o.new_placements}
         # Revalidate the existing governance provenance requirements from audit
         # facts and actual Gold, without another semantic decision or stored plan.
@@ -117,10 +125,27 @@ def validate_audited_state(record, base, candidate):
             check(incoming <= set(after[o.affected_knowledge_ids[0]].provenance), "INCOMING_SUPPORT")
         if o.kind is GoldOperationKind.FLAG_CONFLICT:
             check(incoming <= {p for i in o.affected_knowledge_ids for p in after[i].provenance}, "INCOMING_SUPPORT")
+            # Reuse the existing conflict shape contract: at least two claims,
+            # with actual contradiction edges covering every claimed identity.
+            GoldFlagConflictPayload(o.affected_knowledge_ids,
+                tuple(GoldNewUnitIntent(after[n.knowledge_id], n.placement) for n in o.new_placements),
+                tuple(GoldRelationIntent(i, r) for i in o.affected_knowledge_ids for r in after[i].relations
+                      if r.kind is GoldRelationKind.CONTRADICTS and r.target_knowledge_id in o.affected_knowledge_ids),
+                (), o.conflict_reason)
+        if o.kind in (GoldOperationKind.NO_CHANGE, GoldOperationKind.ENRICH,
+                      GoldOperationKind.REWRITE, GoldOperationKind.MERGE):
+            check(all(i in before and before[i].status is GoldStatus.ACTIVE for i in o.affected_knowledge_ids), "ACTIVE_TARGET")
+        if o.kind is GoldOperationKind.LINK:
+            check(len(o.affected_knowledge_ids) == 2 and len(o.relations) <= 1, "RELATION_ACCOUNTING")
+            check(all({r.source_knowledge_id, r.relation.target_knowledge_id} == set(o.affected_knowledge_ids)
+                      for r in o.relations), "RELATION_ACCOUNTING")
+            check(bool(o.relations) or any({i, r.target_knowledge_id} == set(o.affected_knowledge_ids)
+                for i in o.affected_knowledge_ids if i in before for r in before[i].relations), "RELATION_ACCOUNTING")
         if o.kind is GoldOperationKind.CREATE:
             check(len(o.new_placements) == 1 and o.affected_knowledge_ids == (o.new_placements[0].knowledge_id,), "CREATION_ACCOUNTING")
         if o.kind in (GoldOperationKind.ENRICH, GoldOperationKind.REWRITE):
-            check(len(o.affected_knowledge_ids) == 1, "OPERATION_TARGET")
+            check(len(o.affected_knowledge_ids) == 1 and after[o.affected_knowledge_ids[0]].status is GoldStatus.ACTIVE,
+                  "OPERATION_TARGET")
         if o.kind is GoldOperationKind.MERGE:
             check(set(o.affected_knowledge_ids) == {o.survivor_id, *o.merged_ids}, "MERGE_ACCOUNTING")
             check(o.survivor_id in before and after[o.survivor_id].status is GoldStatus.ACTIVE, "MERGE_SURVIVOR")
@@ -176,7 +201,7 @@ def derive_gold_events(record, base, candidate):
     for o in record.operations:
         for n in o.new_placements:
             items = tuple(sorted(p.source_item_id for p in after_units[n.knowledge_id].provenance
-                if p.source_knowledge_artifact == record.source_reference and p.source_item_id in o.source_item_ids))
+                if p.source_knowledge_artifact == record.source_reference and p.source_item_id in record.source_item_ids))
             add(Event.KNOWLEDGE_CREATED, (n.knowledge_id,), (o.operation_id,), source_items=items)
         if o.kind in (GoldOperationKind.ENRICH, GoldOperationKind.REWRITE) and set(o.affected_knowledge_ids) & changed:
             add(Event.KNOWLEDGE_ENRICHED if o.kind is GoldOperationKind.ENRICH else Event.KNOWLEDGE_REWRITTEN,
