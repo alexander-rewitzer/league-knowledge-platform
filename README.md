@@ -29,7 +29,7 @@ League of Legends therefore serves as the experimental domain rather than the pr
 
 The project does not start from a pre-structured knowledge base. Its preparation pipeline is intended to build and evolve knowledge from public unstructured source material, moving some interpretation and relationship-building work upstream. A structured target catalog identifies what to acquire; it is not the knowledge corpus.
 
-The implemented **Source Acquisition** pipeline discovers, selects and integrates source material into Bronze. **Agentic Knowledge Curation** now includes explicit preparation through canonical one-source knowledge and validated candidate Gold; durable Gold integration and **Experimental Evaluation** remain planned. These separate architecture views are described below; the end-to-end acquisition/curation system remains incomplete.
+The implemented **Source Acquisition** pipeline discovers, selects and integrates source material into Bronze. **Agentic Knowledge Curation** now includes explicit operations through canonical one-source knowledge, validated candidate Gold and durable Gold/history commit; **Experimental Evaluation** remains planned. These separate architecture views are described below; the end-to-end acquisition/curation system remains incomplete.
 
 The purpose-built **Core Knowledge Pipeline is being completed first**, through canonical Gold integration. Retrieval/answering, baseline implementation and Experimental Evaluation are separate downstream workstreams. Planned comparisons include Fixed-Size RAG, Generic Agentic Preparation, Live Web Search Agent and the purpose-built system. The same-corpus comparison isolates preparation strategy; live Web Search is a separate practical benchmark. See [Experimental Evaluation](#experimental-evaluation).
 
@@ -77,7 +77,7 @@ Automated discovery refers to callable components. A manually invoked [run servi
 
 ### Incremental Source Acquisition
 
-Repeated acquisition is intended to find additional previously unseen sources for the same Champion. Integrated-source filtering and resumable acquisition through Bronze persistence and registration are implemented; subsequent knowledge curation remains planned. The run service performs the integration in the following example:
+Repeated acquisition is intended to find additional previously unseen sources for the same Champion. Integrated-source filtering and resumable acquisition through Bronze persistence and registration are implemented; knowledge curation is available through separate explicit APIs, outside acquisition-run orchestration. The run service performs the integration in the following example:
 
 | Logical run | Example |
 | --- | --- |
@@ -87,7 +87,7 @@ Repeated acquisition is intended to find additional previously unseen sources fo
 
 **Selected does not mean integrated.** Discovery, ranking, quality assessment, and selection do not register sources. The run service invokes Bronze integration after persisting selection; the Bronze API registers the source only after successful durable persistence. Unselected or rejected candidates are not added to the catalog by acquisition.
 
-An additional source does not necessarily contribute useful new knowledge. Planned curation may create knowledge, enrich existing knowledge, find overlap, flag conflicts, or make `NO_CHANGE`. It will evolve the existing Gold knowledge rather than rebuild an independent knowledge base for every source. Reusable concepts may emerge from Champion sources; systematic concept-target acquisition remains future scope.
+An additional source does not necessarily contribute useful new knowledge. Explicit curation can create knowledge, enrich existing knowledge, find overlap, flag conflicts, or make `NO_CHANGE`. It evolves the existing Gold knowledge rather than rebuild an independent knowledge base for every source. Reusable concepts may emerge from Champion sources; systematic concept-target acquisition remains future scope.
 
 ## Current Implementation
 
@@ -108,6 +108,7 @@ The repository implements end-to-end Source Acquisition through transient select
 | Canonical Gold Markdown/metadata pairs, bounded layouts, structural pruning and atomic local snapshot publication | [Documents](league_knowledge_platform/gold_documents.py), [store](league_knowledge_platform/gold_store.py), [API](#canonical-gold-documents) |
 | Seven immutable integration operation contracts, pure structural validation and transient interchange | [Governance](league_knowledge_platform/gold_governance.py), [models](league_knowledge_platform/gold_governance_models.py), [API](#gold-integration-governance) |
 | Validated semantic Gold preparation with complete source-item accounting, eight-gate refinement and deterministic candidate-state construction | [Preparation](league_knowledge_platform/gold_integration.py), [API](#gold-integration-preparation) |
+| Durable integration identity, exact replay, eight Change Event types and coordinated Gold/history publication | [Commit](league_knowledge_platform/gold_commit.py), [history](league_knowledge_platform/gold_history.py), [API](#durable-gold-integration) |
 | Snapshot-bound read-only Gold unit/document/topic/provenance inspection and bounded lexical search | [Inspection](league_knowledge_platform/gold_inspection.py), [API](#read-only-gold-inspection) |
 | Unseen-source filtering, refill, immutable integrated-ID snapshot, and cross-page deduplication preserving first-seen order | [Collection](league_knowledge_platform/unseen.py) |
 | Deterministic popularity/recency ranking, explicit reference time, and configurable duration eligibility through central defaults | [Ranking](league_knowledge_platform/ranking.py), [defaults](league_knowledge_platform/defaults.py) |
@@ -121,13 +122,13 @@ Collection returns at most 20 unique unseen candidates. Duration is an eligibili
 
 The run service invokes the Bronze integration API with the original in-memory selected source. Bronze persistence and validation precede catalog registration and the final run-state commit. Discovery, ranking, transcript acquisition and semantic selection do not persist their transient candidates.
 
-The platform as a whole remains in development. Standalone extraction produces transient proposals; section-level validation publishes durable checkpoints, and source audit consolidates them into canonical knowledge for one source. Gold provides model/identity contracts, canonical Markdown/metadata pairs and low-level local snapshot storage. Gold Integration, the semantic Deterministic Writer and retrieval indexing remain planned. Knowledge preparation stages are explicit operations outside acquisition-run orchestration. Fixed-Size RAG, Generic Agentic Preparation, Live Web Search Agent and comparative evaluation are not implemented. Offline tests do not demonstrate live provider availability, semantic model quality or the research hypothesis.
+The platform as a whole remains in development. Standalone extraction produces transient proposals; section-level validation publishes durable checkpoints, and source audit consolidates them into canonical knowledge for one source. Gold provides model/identity contracts, canonical Markdown/metadata pairs and low-level local snapshot storage. Semantic preparation and the deterministic durable writer/commit boundary are implemented; retrieval indexing remains planned. Core Pipeline end-to-end acceptance is still pending. Knowledge preparation stages are explicit operations outside acquisition-run orchestration. Fixed-Size RAG, Generic Agentic Preparation, Live Web Search Agent and comparative evaluation are not implemented. Offline tests do not demonstrate live provider availability, semantic model quality or the research hypothesis.
 
-## Planned Agentic Knowledge Curation
+## Agentic Knowledge Curation
 
-The planned curator has two logical AI stages, **Knowledge Extraction** and **Knowledge Integration**, followed by a **Deterministic Writer**. Standalone extraction, section-level validation/refinement, source audit and Gold preparation are implemented; durable curation into Gold remains planned within the accepted Knowledge Platform architecture.
+The curator has two logical AI stages, **Knowledge Extraction** and **Knowledge Integration**, followed by a **Deterministic Writer**. Standalone extraction, section-level validation/refinement, source audit, Gold preparation and durable commit are implemented as explicit APIs within the accepted Knowledge Platform architecture. Automatic acquisition-to-curation orchestration is not implemented.
 
-Its downstream architecture is **Bronze → deterministic Silver Cleaning → semantic logical segmentation → Knowledge Extraction proposals → section-level semantic validation/checkpoints → Source-Level Audit → SourceKnowledgeArtifact → Existing-Knowledge Inspection → validated Gold preparation → planned durable commit → Updated Structured Knowledge Base**. Bronze retains the selected raw source. Silver segmentation is the single semantic SEGMENT stage; extraction consumes validated CONTENT sections without segmenting again. Source audit produces one-source knowledge; read-only Gold inspection and semantic preparation are available independently, while durable integration remains planned. See the separate [curation architecture](docs/architecture.md#knowledge-layers-and-curator).
+Its downstream architecture is **Bronze → deterministic Silver Cleaning → semantic logical segmentation → Knowledge Extraction proposals → section-level semantic validation/checkpoints → Source-Level Audit → SourceKnowledgeArtifact → Existing-Knowledge Inspection → validated Gold preparation → durable Gold/history commit → Updated Structured Knowledge Base**. Bronze retains the selected raw source. Silver segmentation is the single semantic SEGMENT stage; extraction consumes validated CONTENT sections without segmenting again. Source audit produces one-source knowledge; read-only Gold inspection, semantic preparation and durable integration are available independently. See the separate [curation architecture](docs/architecture.md#knowledge-layers-and-curator).
 
 The standalone [Knowledge Extraction API](#transient-knowledge-extraction) implements EXTRACT and returns transient proposals. The preparation flow includes implemented EXTRACT, section-level VALIDATE and source-wide audit/refinement:
 
@@ -146,7 +147,7 @@ flowchart LR
 
 Agents produce structured intermediate artifacts. Explicit validators outside the generating agent's decision determine stage pass/fail. Failed validation returns structured feedback for corrective iteration; progression occurs only after validation succeeds. Validation is a control mechanism, not a guarantee of factual correctness.
 
-Knowledge Integration preparation inspects relevant existing Gold knowledge and propose governed changes while preserving provenance and contradictions. The implemented [governance contracts](#gold-integration-governance) define `NO_CHANGE`, `CREATE`, `ENRICH`, `REWRITE`, `MERGE`, `LINK`, and `FLAG_CONFLICT`; semantic planning, eight-gate validation and deterministic candidate construction are now available through [Gold integration preparation](#gold-integration-preparation). The prepared result stays in memory; durable publication remains future work. V1 excludes autonomous destructive deletion. The [Gold contract](#versioned-gold-contract) defines valid structural state and [document storage](#canonical-gold-documents) provides paired persistence; durable integration identity, replay/history, Change Events and atomic Gold/history publication remain future work.
+Knowledge Integration preparation inspects relevant existing Gold knowledge and propose governed changes while preserving provenance and contradictions. The implemented [governance contracts](#gold-integration-governance) define `NO_CHANGE`, `CREATE`, `ENRICH`, `REWRITE`, `MERGE`, `LINK`, and `FLAG_CONFLICT`; semantic planning, eight-gate validation and deterministic candidate construction are now available through [Gold integration preparation](#gold-integration-preparation). The prepared result stays in memory until the separate durable commit API validates and publishes it. V1 excludes autonomous destructive deletion. The [Gold contract](#versioned-gold-contract) defines valid structural state and [document storage](#canonical-gold-documents) provides paired persistence; the separate durable layer supplies integration identity, replay/history, Change Events and atomic Gold/history publication.
 
 ## Experimental Evaluation
 
@@ -184,7 +185,7 @@ The later Baseline / Evaluation design freeze will decide chunk size and overlap
 - **Local-first V1:** Local artifacts and stores, with external source/search and LLM APIs where required. Azure remains a possible future deployment target.
 - **Traceable medallion layers:** Bronze retains selected raw sources; Silver remains source-faithful; Gold is the canonical, adaptive Markdown Knowledge Wiki with provenance and visible contradictions.
 - **Derived retrieval:** The planned local retrieval index is derived from Gold and synchronized incrementally. A relation-aware representation does not require a new graph database or fixed Gold ontology.
-- **Controlled integration:** Transient candidates remain unpersisted; Gold preparation validates proposed changes before deterministic candidate construction, with durable commit still planned.
+- **Controlled integration:** Transient candidates remain unpersisted; Gold preparation validates proposed changes before deterministic candidate construction, followed by a separate durable commit with exact-base and history checks.
 - **Human-supervised development:** Versioned plans, human design approval, validation, and human PR review/merge follow the [development workflow](docs/development-workflow.md).
 
 See [V1 scope](docs/scope.md), [architecture](docs/architecture.md), and the [architecture decisions](docs/adr/001-medallion-architecture.md) for the accepted design and its history.
@@ -215,7 +216,7 @@ See [V1 scope](docs/scope.md), [architecture](docs/architecture.md), and the [ar
 
 | Workstream | Priority and scope |
 | --- | --- |
-| A — Core Knowledge System | Current priority: complete Source → canonical Gold integration. Acquisition, source preparation, the Gold contract and canonical document storage exist; Gold preparation exists; durable Gold integration and Change Events remain planned. |
+| A — Core Knowledge System | Core components now include explicit Source → canonical Gold integration, durable history and Change Events. End-to-end Core Pipeline acceptance remains pending; this component delivery does not declare the complete system accepted. |
 | B — Retrieval / Answering | Later: build the serving/query-time path over canonical Gold. Retrieval remains derived/rebuildable and is not implemented. |
 | C — Baselines | Later: Fixed-Size RAG, Generic Agentic Preparation and Live Web Search Agent, with the purpose-built system as the system under test. No baseline system is implemented. |
 | D — Experimental Evaluation | Later: evaluation dataset → ground truth / required evidence → experiment configuration freeze → runs → metrics → analysis. No comparative results exist. |
@@ -496,7 +497,7 @@ The provider receives only the complete current segment texts/indices and langua
 
 Provider item drafts have only `statement` and `spans`, each containing `first_source_index` and `last_source_index`. Provider-generated `section_id`, `item_id`, provenance or extra ontology/confidence fields are rejected. Application code validates inclusive spans against the actual current-section sequence, attaches the trusted section ID and assigns proposal-local IDs such as `item-000001`. Final KnowledgeItems have `item_id`, `statement` and `evidence[]`, whose entries contain `section_id` and `spans[]`. Multiple supporting spans are allowed; gaps in numeric source indices do not imply missing segments.
 
-ITEMS_PROPOSED contains one or more items. NO_KNOWLEDGE_PROPOSED contains zero items and is a normal **proposal**, not a technical failure or a final finding that knowledge is absent. Both remain transient and semantically unaccepted. Structural validation checks schema, outcome/count consistency, IDs, exact duplicate statements and current-section evidence references; it cannot prove faithfulness, completeness, atomicity, context preservation, semantic deduplication or minimal supporting evidence. Those checks and feedback-guided refinement belong to the separate implemented whole-section semantic Validator, including for zero-item proposals. The separate source-audit API then consolidates validated checkpoints; Gold preparation is available separately and durable integration remains planned.
+ITEMS_PROPOSED contains one or more items. NO_KNOWLEDGE_PROPOSED contains zero items and is a normal **proposal**, not a technical failure or a final finding that knowledge is absent. Both remain transient and semantically unaccepted. Structural validation checks schema, outcome/count consistency, IDs, exact duplicate statements and current-section evidence references; it cannot prove faithfulness, completeness, atomicity, context preservation, semantic deduplication or minimal supporting evidence. Those checks and feedback-guided refinement belong to the separate implemented whole-section semantic Validator, including for zero-item proposals. The separate source-audit API then consolidates validated checkpoints; Gold preparation and durable integration are available through separate explicit APIs.
 
 Every explicit extraction operation invokes its capability once. The DeepSeek adapter has no HTTP retries. Invalid output, context/output limits, authentication, network and provider failures are explicit and never converted into an empty or partial successful proposal. Callers can invoke the same section again; generation is nondeterministic and there is no canonical reuse, cache, first-result preference or extraction persistence. The full section and returned proposal form the separate Validator boundary; this API implements no semantic feedback loop or source orchestration.
 
@@ -575,7 +576,7 @@ PASS atomically publishes a versioned `SourceKnowledgeArtifact` under the config
 
 The first compatible durable artifact is canonical. Reuse checks supported schema/audit-contract versions and exact upstream state, including every required checkpoint hash, with zero provider calls or credentials. Recorded model/prompt versions are audit metadata and do not themselves invalidate compatibility; a materially changed semantic contract requires a new source-audit contract version. Corrupt, changed or incompatible artifacts fail without replacement. Same-source races preserve the first compatible winner using owned staging files; crash leftovers are ignored. Failed-loop progress is transient.
 
-`SourceAuditConfig` controls the output root, maximum rounds and separate Agent/Validator output allowances; `DeepSeekSourceAuditConfig` controls model, timeouts and response limits. Non-secret values remain in `defaults.py`. Whole-source capacity failures remain explicit. This artifact contains accepted knowledge for one source, not integrated Gold, global IDs, Gold paths or retrieval metadata. The Gold contract and document storage are available separately; semantic preparation is available separately, while durable integration and Retrieval remain planned. See the [source-audit decision](docs/adr/014-source-knowledge-audit.md).
+`SourceAuditConfig` controls the output root, maximum rounds and separate Agent/Validator output allowances; `DeepSeekSourceAuditConfig` controls model, timeouts and response limits. Non-secret values remain in `defaults.py`. Whole-source capacity failures remain explicit. This artifact contains accepted knowledge for one source, not integrated Gold, global IDs, Gold paths or retrieval metadata. The Gold contract and document storage are available separately; semantic preparation and durable integration are available separately, while Retrieval remains planned. See the [source-audit decision](docs/adr/014-source-knowledge-audit.md).
 
 ## Versioned Gold contract
 
@@ -621,7 +622,7 @@ loaded = load_gold_snapshot(config)  # read-only; validates complete selected st
 
 The store uses `CURRENT.json` and hash-checked manifests under `snapshots/<storage-id>/`. Interrupted staging stays unselected. A publication error after selector replacement can leave the new complete state visible; reload to determine the outcome. Missing/corrupt canonical files fail explicitly. There is no automatic repair, snapshot cleanup or history query. Paths are application-owned, validated against traversal/aliases/collisions and checked for symlink/junction escape. Local filesystem ownership is required.
 
-These are structural storage primitives. Semantic candidate construction is implemented separately in [Gold preparation](#gold-integration-preparation). Coordinated Gold/Change Event publication, index synchronization and automatic orchestration remain planned. Future coordination must stage Gold without independently publishing it ahead of required Change Events. See the [canonical-document decision](docs/adr/015-canonical-gold-documents.md).
+These are structural storage primitives. Semantic candidate construction is implemented separately in [Gold preparation](#gold-integration-preparation). The separate durable commit API coordinates Gold and Change Events using unselected staging and one atomic selector. Legacy standalone publication is refused after explicit coordinated-history initialization. Index synchronization and automatic orchestration remain planned. See the [canonical-document decision](docs/adr/015-canonical-gold-documents.md).
 
 ## Gold integration governance
 
@@ -662,7 +663,7 @@ The strict versioned codec is transient interchange/test infrastructure. It crea
 
 `GOLD_GOVERNANCE_RULES` exposes reusable semantic distinctions for integration prompts and validators. Structural checks cover IDs, target status, source membership, placement, relation closure and provenance retention. They cannot establish semantic equivalence, substantive enrichment, complete knowledge preservation or appropriate operation choice.
 
-Existing support and relations can be recognized without deriving mutation or event behavior. The separate preparation service owns complete source-item accounting, semantic validation and deterministic candidate construction. Future durable commit owns final stale-base verification and actual events. `NO_CHANGE` remains an operation: later provenance additions use `PROVENANCE_ADDED`, while literal no-mutation success uses `NO_CHANGE_RECORDED`. Deterministic empty-source preparation requires no fabricated operation; durable successful replay remains future commit responsibility.
+Existing support and relations can be recognized without deriving mutation or event behavior. The separate preparation service owns complete source-item accounting, semantic validation and deterministic candidate construction. The separate durable commit layer owns final stale-base verification and actual events. `NO_CHANGE` remains an operation: actual provenance additions use `PROVENANCE_ADDED`, while literal no-mutation success uses `NO_CHANGE_RECORDED`. Deterministic empty-source preparation requires no fabricated operation; durable successful replay belongs to the separate commit layer.
 
 ## Read-only Gold inspection
 
@@ -691,7 +692,7 @@ Pages default to 20 units, allow at most 100, and support `offset`, `total_match
 
 ACTIVE and historical MERGED records are included unless explicitly filtered. Historical lookup returns the requested original record and its merge link, never a silent survivor substitution. Historical records identify their containing survivor document and have no current topic placement. Provenance and directional relations are unchanged; no upstream artifacts or transcripts are fetched. Structure inspection returns metadata/IDs in the bounded hierarchy, retaining stored entity display labels rather than normalizing them.
 
-A session never refreshes `CURRENT.json`. If another operation publishes Gold Y, the existing session and its pagination still describe Gold X; open a new session to inspect Y. Gold preparation binds its plan/result to this reference; future durable commit must verify that exact base immediately before publishing. No stale-plan handling, semantic Agent/Validator/Writer, Change Events, persistent index or answer-time Retrieval system is implemented by this API.
+A session never refreshes `CURRENT.json`. If another operation publishes Gold Y, the existing session and its pagination still describe Gold X; open a new session to inspect Y. Gold preparation binds its plan/result to this reference; the durable commit layer verifies that exact base immediately before publishing. No stale-plan handling, semantic Agent/Validator/Writer, Change Events, persistent index or answer-time Retrieval system is implemented by this API.
 
 ## Gold integration preparation
 
@@ -725,7 +726,51 @@ After PASS, pure deterministic application constructs and validates the complete
 
 Central non-secret defaults allow 24 inspection calls and 2 MiB of cumulative serialized observations per operation, up to 8 Agent exchanges per round, 32768/16384 Agent/Validator output tokens, 10/120-second connect/read timeouts and 4 MiB responses. Capacity exhaustion is explicit; source and Gold content are not silently truncated. Use `IntegrationConfig` and `DeepSeekIntegrationConfig` for technical overrides. Provider sessions disable HTTP retries and use versioned prompts; automated tests use fake roles and synthetic HTTP only.
 
-The future durable-commit layer must check successful replay before invoking preparation, verify source/history consistency and confirm that current Gold is still exact X immediately before committing candidate Gold and all required history together. It must record no-mutation/empty-source success durably without fabricating a Gold change. Full canonical Source → Gold integration remains incomplete until that layer exists. See the [preparation boundary decision](docs/adr/016-gold-integration-preparation.md).
+The [durable commit layer](#durable-gold-integration) checks successful replay before preparation, verifies source/history consistency and confirms exact current base X immediately before committing. Stale results require fresh inspection/preparation, not repair or silent rebase. Component availability does not establish end-to-end Core Pipeline acceptance. See the [preparation boundary decision](docs/adr/016-gold-integration-preparation.md).
+
+## Durable Gold integration
+
+The [commit API](league_knowledge_platform/gold_commit.py) composes canonical source admission, existing semantic preparation and deterministic Gold publication. It adds a durable successful `integration_id`, exact replay and eight append-only event types. Preparation alone remains noncanonical. These explicit component APIs do not add automatic acquisition-to-curation orchestration or establish end-to-end Core Pipeline acceptance.
+
+```python
+from league_knowledge_platform import (
+    DeepSeekIntegrationAgent, DeepSeekIntegrationValidator, GoldConfig,
+    initialize_gold_integration_store, integrate_source_knowledge, load_gold_history,
+)
+
+config = GoldConfig("data/gold")
+# Explicit opt-in, including an exact legacy selector backup for existing stores.
+initialize_gold_integration_store(config)
+with DeepSeekIntegrationAgent() as agent, DeepSeekIntegrationValidator() as validator:
+    result = integrate_source_knowledge(
+        "VIDEO_ID", gold_config=config, agent=agent, validator=validator,
+    )
+print(result.integration.integration_id, result.reused)
+history = load_gold_history(config)
+events = history.query_events(integration_id=result.integration.integration_id)
+```
+
+The first invocation may make semantic provider calls. A compatible recorded success is returned before preparation, with the original ID/events and zero Agent/Validator calls, writes or duplicate provenance. Exact source identity, locator, hash and compatible contract must match; malformed upstream state or inconsistent Gold/history fails instead of silently reintegrating. Later valid audited Gold evolution does not invalidate an earlier success.
+
+`commit_prepared_integration(prepared, gold_config=config)` alternatively consumes the original validated in-memory result. It rechecks canonical source compatibility and the exact base X under the local publication guard immediately before committing. `STALE_PREPARED_INTEGRATION` requires fresh inspection/preparation; there is no repair or rebase. Source configurations accepted by preparation can also be passed to these APIs. No provider call occurs inside the commit guard.
+
+Explicit initialization creates selector version 2; existing Gold/document/manifest schemas stay unchanged. `CURRENT.json` selects both immutable Gold pairs and a hash-linked history head in one atomic replacement. All selected files are flushed and validated first. Literal no-op/empty-source success appends history while retaining the same Gold reference, pair bytes and document versions. Legacy selector version 1 remains supported, but standalone `publish_gold_snapshot` is refused in coordinated mode. The opt-in baseline records no invented historical integrations. Retain its exact legacy selector backup; restoring it after subsequent commits would discard recorded success and is not a normal rollback.
+
+| Durable event | Audited effect |
+| --- | --- |
+| `KNOWLEDGE_CREATED` | Actual new stable knowledge identity and placement. |
+| `KNOWLEDGE_ENRICHED` / `KNOWLEDGE_REWRITTEN` | Accepted operation and affected existing identity. |
+| `KNOWLEDGE_MERGED` | Survivor, retired identities and preserved history. |
+| `RELATION_ADDED` | Actual new directed relation. |
+| `CONFLICT_FLAGGED` | Involved claims and unresolved conflict reason. |
+| `PROVENANCE_ADDED` | Actual new support atom, including semantic NO_CHANGE with new support. |
+| `NO_CHANGE_RECORDED` | Durable literal no-mutation success; reason `NO_SOURCE_KNOWLEDGE` distinguishes the empty-input fast path. |
+
+Every event resolves through its owning integration record to exact source/hash, contributing item/operation IDs, applicable model/prompt/run context and affected-unit before/after values. `effect_index` identifies the corresponding provenance/relation addition in that record's effects. Document versions/hashes attribute required placement or pruning to originating operation events; there is no structural event or autonomous deletion. Pure no-op and empty-input success fabricate neither document changes nor semantic metadata. Mixed integrations retain full item accounting without a redundant whole-integration no-change event.
+
+`load_gold_history` returns a pinned immutable view. `get_integration`, `find_integration`, `query_events` and `event_unit_changes` perform no later I/O. Query filters support integration ID, stable knowledge ID (including merged identities), source ID/exact reference and inclusive UTC `since`/`until`; order is timestamp, commit sequence, then event ordinal. Each load verifies the complete selected chain and every referenced Gold snapshot, actual effects and deterministic event derivation. Missing/corrupt/unsupported history fails explicitly, including during replay and ordinary Gold reads. No automatic migration, scanning-based recovery or history reconstruction is performed.
+
+Only the selected chain is canonical. Interrupted unselected staging is ignored; after a selector-replacement error, reload determines whether a complete success is visible. A proven complete success can be returned, otherwise the operation fails explicitly and a compatible retry consults durable replay. Keep immutable historical snapshots and history nodes; no cleanup/index/SQL/broker is introduced. Full-chain validation favors auditability over large-corpus performance. The supported local filesystem/OS atomicity assumptions remain those of the Gold store. See [ADR 017](docs/adr/017-durable-gold-integration.md).
 
 ## Resumable acquisition runs
 

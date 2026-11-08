@@ -68,10 +68,25 @@ def _selector(reference):
             "manifest_sha256": reference.manifest_sha256}
 
 
+def _read_selector(config):
+    value = _decode_json(fs.read_bytes(fs.safe_path(config.root, "CURRENT.json")))
+    if type(value) is not dict or type(value.get("store_schema_version")) is not int:
+        raise GoldVersionError("STORE_VERSION")
+    version = value["store_schema_version"]
+    if version == 1:
+        _keys(value, "store_schema_version storage_id manifest_sha256")
+    elif version == 2:
+        _keys(value, "store_schema_version storage_id manifest_sha256 integration_history")
+        from .gold_history_models import GoldHistoryReference
+        GoldHistoryReference(**_keys(value["integration_history"], "commit_id sha256"))
+    else:
+        raise GoldVersionError("STORE_VERSION")
+    GoldSnapshotReference(value["storage_id"], value["manifest_sha256"])
+    return value
+
+
 def _current(config):
-    value = _keys(_decode_json(fs.read_bytes(fs.safe_path(config.root, "CURRENT.json"))),
-                  "store_schema_version storage_id manifest_sha256")
-    _version(value["store_schema_version"])
+    value = _read_selector(config)
     return GoldSnapshotReference(value["storage_id"], value["manifest_sha256"])
 
 
@@ -116,13 +131,22 @@ def _manifest(config, reference):
     return content, snapshot
 
 
-def load_gold_snapshot(config=GoldConfig()) -> LoadedGoldSnapshot:
-    """Read the selector once and validate the full selected, immutable snapshot."""
+def _read_selection(config):
     with _storage_errors():
         _config(config)
-        reference = _current(config)
+        selector = _read_selector(config)
+        reference = GoldSnapshotReference(selector["storage_id"], selector["manifest_sha256"])
         _, snapshot = _manifest(config, reference)
-        return LoadedGoldSnapshot(reference, snapshot)
+        return selector, LoadedGoldSnapshot(reference, snapshot)
+
+
+def load_gold_snapshot(config=GoldConfig()) -> LoadedGoldSnapshot:
+    """Pin one selector; coordinated selections validate Gold and history together."""
+    selector, loaded = _read_selection(config)
+    if selector["store_schema_version"] == 2:
+        from .gold_history import read_selected_history
+        read_selected_history(config, selector, loaded)
+    return loaded
 
 
 def load_gold_document(snapshot: LoadedGoldSnapshot, document_id: str):
@@ -192,6 +216,8 @@ def publish_gold_snapshot(staged: StagedGoldSnapshot, *, config=GoldConfig(),
                           expected_base: GoldSnapshotReference) -> GoldSnapshotReference:
     with _storage_errors():
         _config(config)
+        if _read_selector(config)["store_schema_version"] == 2:
+            raise GoldStorageError("COORDINATED_COMMIT_REQUIRED")
         if (type(staged) is not StagedGoldSnapshot or staged.root != config.root
                 or staged.base != expected_base):
             raise GoldStorageError("STAGED_CONTEXT")
@@ -201,6 +227,8 @@ def publish_gold_snapshot(staged: StagedGoldSnapshot, *, config=GoldConfig(),
         validate_document_transition(current.snapshot, proposed)
         old_manifest, _ = _manifest(config, current.reference)
         with fs.publication_guard(config.root):
+            if _read_selector(config)["store_schema_version"] == 2:
+                raise GoldStorageError("COORDINATED_COMMIT_REQUIRED")
             if current.reference != expected_base or _current(config) != expected_base:
                 raise GoldStaleBaseError("STALE_BASE")
             if manifest == old_manifest:
