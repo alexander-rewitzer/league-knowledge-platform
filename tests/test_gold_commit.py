@@ -18,16 +18,17 @@ from league_knowledge_platform import (
     initialize_gold_store, initialize_gold_integration_store, enable_gold_integration_history,
     load_gold_snapshot, load_gold_history, prepare_gold_integration,
     publish_gold_snapshot, stage_gold_snapshot, process_source_knowledge,
-    GoldNoChangePayload, GoldStatus, GoldProvenanceAddition,
+    GoldNoChangePayload, GoldOperationKind, GoldStatus, GoldProvenanceAddition,
+    GoldFlagConflictPayload, GoldNewUnitIntent, GoldRelation, GoldRelationIntent, GoldRelationKind,
 )
 from league_knowledge_platform import _gold_filesystem as fs
 from league_knowledge_platform.gold_application import logical_gold_hash, integration_effects
 from league_knowledge_platform.gold_history_codec import encode_history
 from gold_integration_fixtures import BASE, FakeAgent, FakeValidator, source, plan, real_create
-from test_gold_governance_models import examples, operation, SUPPORT
+from test_gold_governance_models import examples, operation, placement, SUPPORT
 from test_gold_models import identity
 from test_gold_models import unit
-from gold_document_fixtures import document, topic
+from gold_document_fixtures import document, layout, topic
 from test_gold_provenance import source_workspace
 from source_audit_fixtures import workspace, FakeValidator as SourceValidator, validator_evaluation
 
@@ -269,6 +270,68 @@ class CommitTests(unittest.TestCase):
         self.assertEqual(relation.operation_ids, ('op-3',))
         self.assertEqual(record.effects.source_item_accounting, (('source-item-000001', ('op-1', 'op-2', 'op-3')),))
         self.assertNotIn(GoldEventType.NO_CHANGE_RECORDED, {e.event_type for e in record.events})
+
+    def test_conflict_claim_creation_attributes_only_its_actual_item_support(self):
+        self.source = source('source-item-000001', 'source-item-000002')
+        second = replace(SUPPORT, source_item_id='source-item-000002')
+        claims = (GoldNewUnitIntent(unit(3, provenance=(SUPPORT,)), placement(2)),
+                  GoldNewUnitIntent(unit(4, provenance=(second,)), placement(3)))
+        edge = GoldRelationIntent(identity(3), GoldRelation(GoldRelationKind.CONTRADICTS, identity(4)))
+        op = operation(GoldFlagConflictPayload((identity(3), identity(4)), claims, (edge,), (),
+            'Distinct supported claims disagree.'), GoldOperationKind.FLAG_CONFLICT, refs=(SUPPORT, second))
+        def propose(request):
+            return plan(operations=(op,), layouts=(layout(topics=(topic(ids=(1,2,3,4)),)),),
+                        base_reference=request.inspection.reference, source_reference=request.source.reference)
+        with patch('league_knowledge_platform.gold_integration.load_integration_source', return_value=self.source), \
+                patch('league_knowledge_platform.gold_commit.load_integration_source', return_value=self.source):
+            record = self.commit(self.prepare(propose)).integration
+        created = {e.affected_knowledge_ids[0]: e for e in record.events
+                   if e.event_type is GoldEventType.KNOWLEDGE_CREATED}
+        self.assertEqual(created[identity(3)].source_item_ids, (SUPPORT.source_item_id,))
+        self.assertEqual(created[identity(4)].source_item_ids, (second.source_item_id,))
+        conflict = next(e for e in record.events if e.event_type is GoldEventType.CONFLICT_FLAGGED)
+        self.assertEqual(conflict.source_item_ids, ('source-item-000001','source-item-000002'))
+        self.assertEqual(record.effects.source_item_accounting,
+            (('source-item-000001', ('op-1',)), ('source-item-000002', ('op-1',))))
+
+    def test_rehashed_history_cannot_rebind_source_while_new_units_keep_unrelated_support(self):
+        from league_knowledge_platform.gold_history_codec import decode_integration_record, document as record_document
+        from league_knowledge_platform.gold_events import derive_gold_events
+        prepared = self.prepare(1)
+        committed = self.commit(prepared)
+        original = committed.integration
+        other = replace(original.source_reference, source_id='C', relative_path='C.json')
+        invalid = replace(original, source_reference=other, events=())
+        invalid = replace(invalid, events=derive_gold_events(invalid, prepared.base_snapshot, prepared.candidate_snapshot))
+        # Make both the typed record and selector hash internally well-formed.
+        self.assertEqual(decode_integration_record(record_document(invalid)), invalid)
+        selector_path = self.gold.root/'CURRENT.json'
+        selector = json.loads(selector_path.read_bytes())
+        path = self.gold.root/'history'/f"{selector['integration_history']['commit_id']}.json"
+        node = json.loads(path.read_bytes())
+        node['integration'] = record_document(invalid)
+        content = encode_history(node)
+        path.write_bytes(content)
+        selector['integration_history']['sha256'] = sha256(content).hexdigest()
+        selector_path.write_bytes(encode_history(selector))
+        before = self.files()
+        with self.assertRaises(GoldHistoryError):
+            load_gold_history(self.gold)
+        self.assertEqual(self.files(), before)
+
+    def test_new_unit_may_retain_support_actually_present_in_base(self):
+        op = examples()[1]
+        original_support = BASE.documents[0].units[0].provenance
+        op = replace(op, payload=replace(op.payload, new_unit=replace(op.payload.new_unit,
+            unit=replace(op.payload.new_unit.unit, provenance=original_support + (SUPPORT,)))))
+        def propose(request):
+            return plan(1, operations=(op,), base_reference=request.inspection.reference,
+                        source_reference=request.source.reference)
+        record = self.commit(self.prepare(propose)).integration
+        created = next(e for e in record.events if e.event_type is GoldEventType.KNOWLEDGE_CREATED)
+        self.assertEqual(created.source_item_ids, (SUPPORT.source_item_id,))
+        self.assertEqual(len(record.effects.provenance_additions), len(original_support)+1)
+        self.assertEqual(load_gold_history(self.gold).integrations, (record,))
 
     def test_subprocess_interruption_before_or_after_selector_and_restart(self):
         script = '''

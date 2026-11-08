@@ -8,7 +8,7 @@ from .gold_documents import validate_gold_snapshot
 from .gold_governance import _new_intents
 from .gold_governance_models import (GoldOperationKind, GoldCreatePayload, GoldNewUnitIntent,
                                     GoldProvenanceAddition, GoldRelationIntent)
-from .gold_models import GoldContractState, GoldStatus
+from .gold_models import GoldContractState, GoldStatus, GoldProvenance
 from .gold_history_models import (
     GoldChangeEvent, GoldEventType as Event, GoldOperationAudit, GoldCreatedPlacement,
     check,
@@ -79,6 +79,7 @@ def validate_audited_state(record, base, candidate):
     check(set(before) <= set(after), "KNOWLEDGE_LOSS")
     check(all(set(o.affected_knowledge_ids) <= set(after) for o in record.operations), "OPERATION_TARGET")
     placements = tuple(n for o in record.operations for n in o.new_placements)
+    base_support = {p for unit in before.values() for p in unit.provenance}
     check(len({n.knowledge_id for n in placements}) == len(placements)
           and {n.knowledge_id for n in placements} == set(after) - set(before), "CREATION_ACCOUNTING")
     for identity, old in before.items():
@@ -101,8 +102,21 @@ def validate_audited_state(record, base, candidate):
         check(o.kind is not GoldOperationKind.LINK or not o.support, "SUPPORT_AUTHORITY")
         check(o.kind is not GoldOperationKind.NO_CHANGE or not o.relations, "RELATION_AUTHORITY")
         check(all(r.source_knowledge_id in o.affected_knowledge_ids for r in o.relations), "RELATION_AUTHORITY")
-        check(all(s.provenance.source_knowledge_artifact != record.source_reference
-                  or s.provenance.source_item_id in o.source_item_ids for s in o.support), "SUPPORT_SOURCE")
+        incoming = {GoldProvenance(record.source_reference, item) for item in o.source_item_ids}
+        check(all(s.provenance in incoming or s.provenance in base_support for s in o.support), "SUPPORT_SOURCE")
+        new_ids = {n.knowledge_id for n in o.new_placements}
+        # Revalidate the existing governance provenance requirements from audit
+        # facts and actual Gold, without another semantic decision or stored plan.
+        if o.kind in (GoldOperationKind.NO_CHANGE, GoldOperationKind.FLAG_CONFLICT):
+            check(all(s.provenance in incoming for s in o.support if s.knowledge_id not in new_ids), "SUPPORT_SOURCE")
+        for n in o.new_placements:
+            support = set(after[n.knowledge_id].provenance)
+            check(bool(support & incoming) if o.kind is GoldOperationKind.FLAG_CONFLICT
+                  else incoming <= support, "INCOMING_SUPPORT")
+        if o.kind in (GoldOperationKind.ENRICH, GoldOperationKind.REWRITE):
+            check(incoming <= set(after[o.affected_knowledge_ids[0]].provenance), "INCOMING_SUPPORT")
+        if o.kind is GoldOperationKind.FLAG_CONFLICT:
+            check(incoming <= {p for i in o.affected_knowledge_ids for p in after[i].provenance}, "INCOMING_SUPPORT")
         if o.kind is GoldOperationKind.CREATE:
             check(len(o.new_placements) == 1 and o.affected_knowledge_ids == (o.new_placements[0].knowledge_id,), "CREATION_ACCOUNTING")
         if o.kind in (GoldOperationKind.ENRICH, GoldOperationKind.REWRITE):
@@ -111,6 +125,8 @@ def validate_audited_state(record, base, candidate):
             check(set(o.affected_knowledge_ids) == {o.survivor_id, *o.merged_ids}, "MERGE_ACCOUNTING")
             check(o.survivor_id in before and after[o.survivor_id].status is GoldStatus.ACTIVE, "MERGE_SURVIVOR")
             check(all(after[i].merged_into == o.survivor_id and after[i].content == before[i].content for i in o.merged_ids), "MERGE_HISTORY")
+            required = incoming | {p for i in o.affected_knowledge_ids for p in before[i].provenance}
+            check(required <= set(after[o.survivor_id].provenance), "INCOMING_SUPPORT")
     # Reuse the merged corrective structural invariant with only audited placement
     # facts. This projection contains no second semantic plan or decision logic.
     declarations = tuple(SimpleNamespace(payload=GoldCreatePayload(GoldNewUnitIntent(after[n.knowledge_id], n.placement)))
@@ -136,6 +152,7 @@ def validate_audited_state(record, base, candidate):
 def derive_gold_events(record, base, candidate):
     before_owner = {u.knowledge_id: d.document_id for d in base.documents for u in d.units + d.historical_units}
     after_owner = {u.knowledge_id: d.document_id for d in candidate.documents for u in d.units + d.historical_units}
+    after_units = {u.knowledge_id: u for d in candidate.documents for u in d.units + d.historical_units}
     changed = {u.knowledge_id for u in record.effects.units}
     events = []
 
@@ -158,7 +175,9 @@ def derive_gold_events(record, base, candidate):
         return tuple(events)
     for o in record.operations:
         for n in o.new_placements:
-            add(Event.KNOWLEDGE_CREATED, (n.knowledge_id,), (o.operation_id,))
+            items = tuple(sorted(p.source_item_id for p in after_units[n.knowledge_id].provenance
+                if p.source_knowledge_artifact == record.source_reference and p.source_item_id in o.source_item_ids))
+            add(Event.KNOWLEDGE_CREATED, (n.knowledge_id,), (o.operation_id,), source_items=items)
         if o.kind in (GoldOperationKind.ENRICH, GoldOperationKind.REWRITE) and set(o.affected_knowledge_ids) & changed:
             add(Event.KNOWLEDGE_ENRICHED if o.kind is GoldOperationKind.ENRICH else Event.KNOWLEDGE_REWRITTEN,
                 o.affected_knowledge_ids, (o.operation_id,))
