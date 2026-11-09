@@ -180,7 +180,23 @@ from .segmentation import (
 )
 from .deepseek_segmentation import DeepSeekSegmentationAdapter, DeepSeekSegmentationConfig
 
+from .gold_history_models import (
+    HISTORY_SCHEMA_VERSION, EVENT_SCHEMA_VERSION, DURABLE_INTEGRATION_CONTRACT_VERSION,
+    GoldHistoryError, GoldHistoryCompatibilityError, GoldCommitError, GoldHistoryReference,
+    GoldEventType, GoldChangeEvent, GoldOperationAudit, GoldRoundAudit, GoldIntegrationRecord,
+    GoldCommitResult,
+)
+from .gold_history import (
+    GoldHistorySnapshot, load_gold_history, initialize_gold_integration_store, enable_gold_integration_history,
+)
+from .gold_commit import commit_prepared_integration, integrate_source_knowledge
+
 __all__ = [
+    "HISTORY_SCHEMA_VERSION", "EVENT_SCHEMA_VERSION", "DURABLE_INTEGRATION_CONTRACT_VERSION",
+    "GoldHistoryError", "GoldHistoryCompatibilityError", "GoldCommitError", "GoldHistoryReference",
+    "GoldEventType", "GoldChangeEvent", "GoldOperationAudit", "GoldRoundAudit", "GoldIntegrationRecord",
+    "GoldCommitResult", "GoldHistorySnapshot", "load_gold_history", "initialize_gold_integration_store",
+    "enable_gold_integration_history", "commit_prepared_integration", "integrate_source_knowledge",
     "IntegrationConfig", "IntegrationPlan", "IntegrationIssue", "IntegrationGate",
     "IntegrationVerdict", "IntegrationGateEvaluation", "IntegrationEvaluation",
     "IntegrationRound", "IntegrationAgentRequest", "IntegrationValidatorRequest",
