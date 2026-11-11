@@ -29,9 +29,9 @@ League of Legends therefore serves as the experimental domain rather than the pr
 
 The project does not start from a pre-structured knowledge base. Its preparation pipeline is intended to build and evolve knowledge from public unstructured source material, moving some interpretation and relationship-building work upstream. A structured target catalog identifies what to acquire; it is not the knowledge corpus.
 
-The implemented **Source Acquisition** pipeline discovers, selects and integrates source material into Bronze. **Agentic Knowledge Curation** now includes explicit operations through canonical one-source knowledge, validated candidate Gold and durable Gold/history commit; **Experimental Evaluation** remains planned. These separate architecture views are described below; the end-to-end acquisition/curation system remains incomplete.
+The **Core Knowledge Preparation** path is implemented from Source Acquisition through durable canonical Gold integration, with append-only integration history, Change Events and replay. The Core workstream remains open until end-to-end acceptance validation passes.
 
-The purpose-built **Core Knowledge Pipeline is being completed first**, through canonical Gold integration. Retrieval/answering, baseline implementation and Experimental Evaluation are separate downstream workstreams. Planned comparisons include Fixed-Size RAG, Generic Agentic Preparation, Live Web Search Agent and the purpose-built system. The same-corpus comparison isolates preparation strategy; live Web Search is a separate practical benchmark. See [Experimental Evaluation](#experimental-evaluation).
+Retrieval / Answering follows Core acceptance, then Baselines and Experimental Evaluation. Planned comparisons include Fixed-Size RAG, Generic Agentic Preparation, Live Web Search Agent and the purpose-built system. The same-corpus comparison isolates preparation strategy; live Web Search is a separate practical benchmark. See [Experimental Evaluation](#experimental-evaluation).
 
 ### Data Sources
 
@@ -91,7 +91,7 @@ An additional source does not necessarily contribute useful new knowledge. Expli
 
 ## Current Implementation
 
-The repository implements end-to-end Source Acquisition through transient selection, resumable progress, durable Bronze and source registration, plus explicit Silver cleaning/segmentation, transient extraction, validated-section knowledge and canonical one-source knowledge:
+The repository implements Source Acquisition through durable Bronze and source registration, plus explicit preparation stages from Silver cleaning through canonical Gold integration:
 
 | Implemented capability | Repository evidence |
 | --- | --- |
@@ -195,7 +195,6 @@ See [V1 scope](docs/scope.md), [architecture](docs/architecture.md), and the [ar
 | Status | Work |
 | --- | --- |
 | Implemented | Champion targets, discovery, integrated-source lookup, unseen collection, ranking, transient transcripts, absolute quality assessment, deterministic gating, conditional comparison, and resumable acquisition runs with offline tests |
-| In development | Knowledge Platform overall; acquisition components exist, but the full acquisition/curation pipeline is incomplete |
 | Implemented | Selected-source Bronze persistence, post-persistence registration, run integration and offline crash-recovery tests |
 | Implemented | Deterministic source-faithful Silver cleaning with durable versioned artifacts |
 | Implemented | Semantic logical segmentation, exactly-once structural validation and durable source-faithful processing results |
@@ -206,17 +205,18 @@ See [V1 scope](docs/scope.md), [architecture](docs/architecture.md), and the [ar
 | Implemented | Canonical Gold document pairs, bounded structure and atomic local snapshot storage |
 | Implemented | Integration governance contracts and pure operation validation; no semantic operation selection or execution |
 | Implemented | Read-only canonical Gold inspection and lexical candidate search bound to one validated snapshot |
-| Implemented | Semantic integration preparation, eight-gate validation/refinement and deterministic complete candidate Gold; no canonical publication |
-| Planned subsequent | Durable integration commit/history, incremental retrieval index, and raw knowledge-change metrics |
+| Implemented | Adaptive Gold integration preparation, eight-gate validation/refinement and deterministic candidate Gold |
+| Implemented | Durable canonical Gold commit, append-only integration history, Change Events and replay |
+| Pending — Core acceptance | Final end-to-end validation of the implemented Core Knowledge Preparation path |
+| Planned subsequent | Incremental retrieval index and raw knowledge-change metrics |
 | Planned evaluation | Fixed-size baseline, query-time comparison, and quality/efficiency/preparation measurements |
-| Planned — Core completion | Durable Gold integration identity, replay/history, atomic Gold + Change Events publication and raw knowledge-change metrics |
 | Planned — Serving | Derived Retrieval / Answering |
 | Planned — Baselines | Fixed-Size RAG, Generic Agentic Preparation and Live Web Search Agent |
 | Planned — Evaluation | Controlled preparation comparison and separate practical Web Search benchmark |
 
 | Workstream | Priority and scope |
 | --- | --- |
-| A — Core Knowledge System | Core components now include explicit Source → canonical Gold integration, durable history and Change Events. End-to-end Core Pipeline acceptance remains pending; this component delivery does not declare the complete system accepted. |
+| A — Core Knowledge System | Technical implementation through durable canonical Gold and append-only integration history. Final end-to-end acceptance is pending. |
 | B — Retrieval / Answering | Later: build the serving/query-time path over canonical Gold. Retrieval remains derived/rebuildable and is not implemented. |
 | C — Baselines | Later: Fixed-Size RAG, Generic Agentic Preparation and Live Web Search Agent, with the purpose-built system as the system under test. No baseline system is implemented. |
 | D — Experimental Evaluation | Later: evaluation dataset → ground truth / required evidence → experiment configuration freeze → runs → metrics → analysis. No comparative results exist. |
