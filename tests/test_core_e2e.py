@@ -266,14 +266,16 @@ from league_knowledge_platform import (GoldConfig, SectionValidationConfig, Segm
 root = Path(sys.argv[1])
 gold = GoldConfig(root / 'gold')
 view = load_gold_history(gold)
-assert view.gold_reference == load_gold_snapshot(gold).reference
+if view.gold_reference != load_gold_snapshot(gold).reference:
+    raise AssertionError('Gold snapshot and history disagree after restart')
 for video, identity in [('fixture-0', sys.argv[2]), ('empty', sys.argv[3])]:
     replay = integrate_source_knowledge(video, gold_config=gold, silver_config=SilverConfig(root / 'silver'),
         segmentation_config=SegmentationConfig(root / 'segments'), section_validation_config=SectionValidationConfig(root / 'validated'),
         config=SourceAuditConfig(root / 'source'))
-    assert replay.reused and replay.integration.integration_id == identity
-    assert replay.integration == view.get_integration(identity)
-assert load_gold_history(gold) == view
+    if not replay.reused or replay.integration != view.get_integration(identity):
+        raise AssertionError(f'Replay changed the recorded integration for {video}')
+if load_gold_history(gold) != view:
+    raise AssertionError('Replay changed durable history')
 """
         subprocess.run([sys.executable, "-c", code, str(self.root), records[0].integration_id, empty.integration_id],
                        env=process_environment(), check=True, timeout=60)
