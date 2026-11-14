@@ -23,6 +23,9 @@ def projected_gold_references(*projections):
                 visit(member, document_id)
         elif type(value) is dict:
             document_id = value.get("document_id", document_id)
+            if "version" in value and "topics" in value:
+                # Full GoldDocument stores its identity in the sibling version object.
+                document_id = value["version"]["document_id"]
             if document_id is not None and "topic_id" in value:
                 topics.add((document_id, value["topic_id"]))
             if "source_knowledge_artifact" in value:

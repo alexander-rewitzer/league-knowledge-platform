@@ -70,12 +70,14 @@ class DeepSeekIntegrationTests(unittest.TestCase):
         return adapter,http
 
     def topic_collision(self):
-        gold = GoldConfig(Path(self.directory.name) / 'topic-collision')
-        before = initialize_gold_store(gold)
-        snapshot = inspection_snapshot()
-        publish_gold_snapshot(stage_gold_snapshot(snapshot, config=gold, base=before), config=gold, expected_base=before)
+        if not hasattr(self, 'collision_gold'):
+            self.collision_gold = GoldConfig(Path(self.directory.name) / 'topic-collision')
+            before = initialize_gold_store(self.collision_gold)
+            staged = stage_gold_snapshot(inspection_snapshot(), config=self.collision_gold, base=before)
+            publish_gold_snapshot(staged, config=self.collision_gold, expected_base=before)
+        gold = self.collision_gold
         inspection = IntegrationInspection(gold, IntegrationConfig())
-        first, second, _ = snapshot.documents
+        first, second, _ = inspection.snapshot.documents
         other_topic = next(topic for topic in first.topics if topic.topic_id != second.topics[0].topic_id)
         known_unit = other_topic.units[0].knowledge_id
         inspection.query('search_gold', query=known_unit)
@@ -218,6 +220,26 @@ class DeepSeekIntegrationTests(unittest.TestCase):
         result = agent.propose(request)
         placement = result.operations[0].payload.new_unit.placement
         self.assertEqual((placement.document_id, placement.topic_id), (first.document_id, shared_topic_id))
+
+    def test_full_document_observation_authorizes_its_topic_for_lookup_and_placement(self):
+        _, first, shared_topic_id = self.topic_collision()
+        pair = {'document_id': first.document_id, 'topic_id': shared_topic_id}
+        draft = create_draft(self.request.source, [['source-item-000001']])
+        proposed = draft['proposal']
+        proposed['layouts'][0]['document_id'] = first.document_id
+        proposed['layouts'][0]['topics'][0]['topic_id'] = shared_topic_id
+        proposed['operations'][0]['payload']['new_unit']['placement'].update(pair)
+        full_document = {'queries': [{'method': 'get_gold_document', 'arguments': {'document_id': first.document_id}}]}
+        targeted = {'queries': [{'method': 'get_gold_topic', 'arguments': pair}]}
+        for inspect_topic in (False, True):
+            with self.subTest(inspect_topic=inspect_topic):
+                request, _, _ = self.topic_collision()
+                script = [full_document, targeted, draft] if inspect_topic else [full_document, draft]
+                agent, http = self.adapter(DeepSeekIntegrationAgent, [(200, envelope(reply)) for reply in script])
+                outcome = agent.propose(request)
+                placement = outcome.operations[0].payload.new_unit.placement
+                self.assertEqual((placement.document_id, placement.topic_id), (first.document_id, shared_topic_id))
+                self.assertEqual(len(http.calls), len(script))
 
     def test_proposal_cannot_reference_invented_or_unobserved_gold_identity(self):
         undisclosed = IntegrationInspection(self.gold, IntegrationConfig())
