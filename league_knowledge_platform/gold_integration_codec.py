@@ -29,7 +29,7 @@ def plan_document(plan):
             "proposed_layout": [asdict(d) for d in plan.proposed_layout]}
 
 
-def proposal_to_plan(document, request, metadata, observed_ids, observed_provenance):
+def proposal_to_plan(document, request, metadata, observed_ids, observed_topics, observed_provenance):
     """Source/base bindings and new identities come exclusively from application state.
 
     Only identity positions are resolved; literal content/rationale is never rewritten.
@@ -51,6 +51,14 @@ def proposal_to_plan(document, request, metadata, observed_ids, observed_provena
         require(value in observed_ids, "UNOBSERVED_GOLD_ID")
         return value
 
+    def topic_identity(value, document_id):
+        resolved = identity(value, "topic")
+        if value.startswith("new-"):
+            require((document_id, resolved) in declared_topics, "UNDECLARED_TOPIC")
+        else:
+            require((document_id, resolved) in observed_topics, "UNOBSERVED_GOLD_TOPIC")
+        return resolved
+
     def resolve(value):
         if type(value) is list:
             return [resolve(v) for v in value]
@@ -69,7 +77,7 @@ def proposal_to_plan(document, request, metadata, observed_ids, observed_provena
             elif name == "document_id":
                 result[name] = identity(member, "document")
             elif name == "topic_id":
-                result[name] = identity(member, "topic")
+                result[name] = topic_identity(member, identity(value["document_id"], "document"))
             else:
                 result[name] = resolve(member)
         return result
@@ -83,14 +91,17 @@ def proposal_to_plan(document, request, metadata, observed_ids, observed_provena
         elif operation["kind"] == "FLAG_CONFLICT":
             for claim in array(payload["new_claims"]):
                 declare(claim["unit"]["knowledge_id"], "unit")
+    declared_topics = set()
     for layout in array(document["layouts"]):
         keys(layout, "document_id title entity domain_key topics")
         if layout["document_id"].startswith("new-"):
             declare(layout["document_id"], "document")
+        doc_id = identity(layout["document_id"], "document")
         for topic in array(layout["topics"]):
             keys(topic, "topic_id title position units")
             if topic["topic_id"].startswith("new-"):
                 declare(topic["topic_id"], "topic")
+                declared_topics.add((doc_id, identity(topic["topic_id"], "topic")))
 
     operations = []
     for index, draft in enumerate(document["operations"], 1):
@@ -106,10 +117,8 @@ def proposal_to_plan(document, request, metadata, observed_ids, observed_provena
     for layout in document["layouts"]:
         doc_id = identity(layout["document_id"], "document")
         topics = []
-        old_topic_ids = {t.topic_id for d in inspection.snapshot.documents if d.document_id == doc_id for t in d.topics}
         for topic in layout["topics"]:
-            topic_id = identity(topic["topic_id"], "topic")
-            require(topic_id in old_topic_ids or topic["topic_id"].startswith("new-topic-"), "NEW_ALIAS")
+            topic_id = topic_identity(topic["topic_id"], doc_id)
             placements = []
             for p in array(topic["units"]):
                 keys(p, "knowledge_id position")

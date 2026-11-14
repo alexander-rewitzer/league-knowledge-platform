@@ -11,6 +11,7 @@ from league_knowledge_platform import *
 from league_knowledge_platform.gold_integration_input import IntegrationInspection
 from league_knowledge_platform.gold_integration_codec import evaluation_document, plan_document
 from gold_integration_fixtures import BASE, META, source, plan, evaluation
+from test_gold_inspection import inspection_snapshot
 from test_gold_governance_models import SUPPORT
 from selection_http_fixtures import SelectionHTTPAdapter, envelope, requests
 
@@ -67,6 +68,19 @@ class DeepSeekIntegrationTests(unittest.TestCase):
         adapter=role(api_key='offline-fixture',http_adapter=http,**kwargs)
         self.addCleanup(adapter.close)
         return adapter,http
+
+    def topic_collision(self):
+        gold = GoldConfig(Path(self.directory.name) / 'topic-collision')
+        before = initialize_gold_store(gold)
+        snapshot = inspection_snapshot()
+        publish_gold_snapshot(stage_gold_snapshot(snapshot, config=gold, base=before), config=gold, expected_base=before)
+        inspection = IntegrationInspection(gold, IntegrationConfig())
+        first, second, _ = snapshot.documents
+        other_topic = next(topic for topic in first.topics if topic.topic_id != second.topics[0].topic_id)
+        known_unit = other_topic.units[0].knowledge_id
+        inspection.query('search_gold', query=known_unit)
+        inspection.query('inspect_gold_structure', domain_key=second.domain_key)
+        return replace(self.request, inspection=inspection), first, second.topics[0].topic_id
 
     def test_agent_strict_projection_and_context_no_secret_or_whole_corpus(self):
         adapter,http=self.adapter(DeepSeekIntegrationAgent,[(200,envelope(proposal()))])
@@ -162,6 +176,48 @@ class DeepSeekIntegrationTests(unittest.TestCase):
                     agent.propose(self.request)
                 self.assertEqual(caught.exception.code, 'INSPECTION_INVALID_ARGUMENTS')
                 self.assertEqual(len(http.calls), 1)
+
+    def test_topic_lookups_and_combined_filters_require_the_observed_document_pair(self):
+        request, first, shared_topic_id = self.topic_collision()
+        pair = {'document_id': first.document_id, 'topic_id': shared_topic_id}
+        for method, extra in (('get_gold_topic', {}), ('search_gold', {'query': 'charm'})):
+            with self.subTest(method=method):
+                query = {'queries': [{'method': method, 'arguments': {**pair, **extra}}]}
+                agent, _ = self.adapter(DeepSeekIntegrationAgent, [(200, envelope(query))])
+                with self.assertRaises(IntegrationOperationalError) as caught:
+                    agent.propose(request)
+                self.assertEqual(caught.exception.code, 'INSPECTION_UNKNOWN_ID')
+        cross_document = {'queries': [{'method': 'search_gold', 'arguments': {'query': 'charm', 'topic_id': shared_topic_id}}]}
+        targeted = {'queries': [{'method': 'get_gold_topic', 'arguments': pair}]}
+        agent, http = self.adapter(DeepSeekIntegrationAgent, [
+            (200, envelope(cross_document)), (200, envelope(targeted)), (200, envelope(proposal())),
+        ])
+        agent.propose(request)
+        result = request_payload(http, 2)['inspected_gold'][-1]['result']['value']
+        self.assertEqual((result['document_id'], result['topic']['topic_id']), (first.document_id, shared_topic_id))
+
+    def test_proposal_layout_and_placement_require_the_observed_topic_pair(self):
+        request, first, shared_topic_id = self.topic_collision()
+        draft = create_draft(request.source, [['source-item-000001']])
+        layout = draft['proposal']['layouts'][0]
+        layout['document_id'] = first.document_id
+        layout['topics'][0]['topic_id'] = shared_topic_id
+        intent = draft['proposal']['operations'][0]['payload']['new_unit']['placement']
+        intent.update(document_id=first.document_id, topic_id=shared_topic_id)
+        for layouts in ([layout], []):
+            with self.subTest(layout_included=bool(layouts)):
+                draft['proposal']['layouts'] = layouts
+                agent, _ = self.adapter(DeepSeekIntegrationAgent, [(200, envelope(draft))])
+                with self.assertRaises(IntegrationOperationalError) as caught:
+                    agent.propose(request)
+                self.assertEqual(caught.exception.code, 'INVALID_OUTPUT')
+        draft['proposal']['layouts'] = [layout]
+        agent, _ = self.adapter(DeepSeekIntegrationAgent, [
+            (200, envelope(structure_query(document_id=first.document_id))), (200, envelope(draft)),
+        ])
+        result = agent.propose(request)
+        placement = result.operations[0].payload.new_unit.placement
+        self.assertEqual((placement.document_id, placement.topic_id), (first.document_id, shared_topic_id))
 
     def test_proposal_cannot_reference_invented_or_unobserved_gold_identity(self):
         undisclosed = IntegrationInspection(self.gold, IntegrationConfig())
@@ -318,6 +374,15 @@ class DeepSeekIntegrationTests(unittest.TestCase):
         request = IntegrationValidatorRequest(self.request.source, complete, self.inspection.observations, 100)
         identities = (BASE.documents[0].document_id, layout.document_id, layout.topics[0].topic_id)
         result = evaluation_document(evaluation('STRUCTURAL_VALIDITY', affected_gold_ids=identities))
+        validator, _ = self.adapter(DeepSeekIntegrationValidator, [(200, envelope(result))])
+        self.assertEqual(validator.evaluate(request).decision, 'REJECT')
+
+    def test_validator_can_reference_both_link_endpoints_from_the_plan(self):
+        link = plan(5)
+        edge = link.operations[0].payload.relation
+        request = IntegrationValidatorRequest(self.request.source, link, (), 100)
+        identities = (edge.source_knowledge_id, edge.relation.target_knowledge_id)
+        result = evaluation_document(evaluation('TARGET_CORRECTNESS', affected_gold_ids=identities))
         validator, _ = self.adapter(DeepSeekIntegrationValidator, [(200, envelope(result))])
         self.assertEqual(validator.evaluate(request).decision, 'REJECT')
 

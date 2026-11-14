@@ -37,6 +37,8 @@ If gold_has_documents is false, no existing Gold ID is available. To discover ex
 topic/unit IDs, use {"method":"inspect_gold_structure","arguments":{}} or filter by entity/domain keys without an ID.
 Copy actual IDs returned in inspected_gold for targeted queries. Wait for the discovery result in the next exchange
 before using its IDs. Omit unknown optional filters or use null. Proposal-local aliases are never inspection IDs.
+Topic IDs are document-local. When targeting a topic in a specific document, use the exact observed document_id and
+topic_id pair from the same result. An observed topic_id by itself is a cross-document search filter.
 Each operation: kind, source_item_ids, rationale, payload (exact supplied governance codec schema).
 Layouts: document_id,title,entity{namespace,entity_key,display_name},domain_key,
 topics[{topic_id,title,position,units[{knowledge_id,position}]}]. No versions, paths, events or integration_id.

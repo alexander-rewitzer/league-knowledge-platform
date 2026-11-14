@@ -15,28 +15,30 @@ from .gold_integration_models import IntegrationOperationalError, require
 
 def projected_gold_references(*projections):
     """Collect IDs and provenance from typed Gold fields, ignoring free text."""
-    identities = set()
-    provenance = set()
+    identities, topics, provenance = set(), set(), set()
 
-    def visit(value):
+    def visit(value, document_id=None):
         if type(value) in (list, tuple):
             for member in value:
-                visit(member)
+                visit(member, document_id)
         elif type(value) is dict:
+            document_id = value.get("document_id", document_id)
+            if document_id is not None and "topic_id" in value:
+                topics.add((document_id, value["topic_id"]))
             if "source_knowledge_artifact" in value:
                 provenance.add(json_value(value))
             for name, member in value.items():
-                if name in ("knowledge_id", "target_knowledge_id", "merged_into", "document_id", "topic_id"):
+                if name in ("knowledge_id", "target_knowledge_id", "source_knowledge_id", "merged_into", "document_id", "topic_id"):
                     if member is not None:
                         identities.add(member)
                 elif name in ("knowledge_ids", "historical_knowledge_ids", "target_knowledge_ids", "claim_knowledge_ids"):
                     identities.update(member)
                 else:
-                    visit(member)
+                    visit(member, document_id)
 
     for projection in projections:
         visit(projection)
-    return frozenset(identities), frozenset(provenance)
+    return frozenset(identities), frozenset(topics), frozenset(provenance)
 
 
 def json_value(value):

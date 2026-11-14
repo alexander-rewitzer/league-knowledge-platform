@@ -61,11 +61,13 @@ def _contracts():
             "observed_id_formats": {name: prefix + "-[0-9a-f]{32}" for name, prefix in _QUERY_ID_PREFIXES.items()},
             "queries": {
                 "search_gold": {"required": {"query": "string"}, "optional": {
-                    **filters, "topic_id": "null or observed topic_id", "status": "null, ACTIVE or MERGED",
+                    **filters, "topic_id": "null or observed topic_id; with document_id use the observed pair",
+                    "status": "null, ACTIVE or MERGED",
                     "limit": f"integer 1 through {defaults.GOLD_INSPECTION_MAX_PAGE_LIMIT}", "offset": "integer >= 0"}},
                 "get_gold_unit": {"required": {"knowledge_id": "observed knowledge_id"}},
                 "get_gold_document": {"required": {"document_id": "observed document_id"}},
-                "get_gold_topic": {"required": {"document_id": "observed document_id", "topic_id": "observed topic_id"}},
+                "get_gold_topic": {"required": {"document_id": "observed document_id",
+                    "topic_id": "observed topic_id from the same document_id"}},
                 "get_gold_provenance": {"required": {"knowledge_id": "observed knowledge_id"}},
                 "inspect_gold_structure": {"required": {}, "optional": filters}}}
 
@@ -135,7 +137,7 @@ class _IntegrationJSONAdapter:
 
 
 class DeepSeekIntegrationAgent(_IntegrationJSONAdapter):
-    def _inspect(self, inspection, method, arguments, query_contracts, observed_ids):
+    def _inspect(self, inspection, method, arguments, query_contracts, observed_ids, observed_topics):
         require(isinstance(method, str) and method in query_contracts, "INSPECTION_METHOD")
         required = set(query_contracts[method]["required"])
         optional = set(query_contracts[method].get("optional", ()))
@@ -148,6 +150,9 @@ class DeepSeekIntegrationAgent(_IntegrationJSONAdapter):
                 _request_identity(identity, _QUERY_ID_PREFIXES[name])
                 if identity not in observed_ids:
                     raise self._error("INSPECTION_UNKNOWN_ID")
+            document_id, topic_id = arguments.get("document_id"), arguments.get("topic_id")
+            if document_id is not None and topic_id is not None and (document_id, topic_id) not in observed_topics:
+                raise self._error("INSPECTION_UNKNOWN_ID")
             inspection.query(method, **arguments)
         except GoldInspectionRequestError as error:
             code = "INSPECTION_INVALID_IDENTITY" if error.code == "IDENTITY" else "INSPECTION_INVALID_ARGUMENTS"
@@ -174,17 +179,19 @@ class DeepSeekIntegrationAgent(_IntegrationJSONAdapter):
             document, metadata = self._complete(payload, INTEGRATION_AGENT_SYSTEM_PROMPT,
                 INTEGRATION_AGENT_PROMPT_VERSION, request.config.agent_output_limit)
             try:
-                observed_ids, observed_provenance = projected_gold_references(
+                observed_ids, observed_topics, observed_provenance = projected_gold_references(
                     *(observation["result"] for observation in observations))
                 if type(document) is dict and set(document) == {"proposal"}:
-                    return proposal_to_plan(document["proposal"], request, metadata, observed_ids, observed_provenance)
+                    return proposal_to_plan(document["proposal"], request, metadata,
+                                            observed_ids, observed_topics, observed_provenance)
                 keys(document, "queries")
                 queries = array(document["queries"])
                 require(bool(queries), "INSPECTION_QUERY")
                 for query in queries:
                     keys(query, "method arguments")
                     require(type(query["arguments"]) is dict, "INSPECTION_QUERY")
-                    self._inspect(request.inspection, query["method"], query["arguments"], contracts["queries"], observed_ids)
+                    self._inspect(request.inspection, query["method"], query["arguments"], contracts["queries"],
+                                  observed_ids, observed_topics)
             except IntegrationOperationalError:
                 raise
             except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
@@ -203,7 +210,7 @@ class DeepSeekIntegrationValidator(_IntegrationJSONAdapter):
             evaluation = decode_integration_evaluation(document, metadata)
         except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
             raise self._error("INVALID_OUTPUT") from None
-        supplied_ids, _ = projected_gold_references(payload["complete_plan"],
+        supplied_ids, _, _ = projected_gold_references(payload["complete_plan"],
             *(observation["result"] for observation in payload["inspected_gold"]))
         if any(not supplied_ids.issuperset(issue.affected_gold_ids)
                for gate in evaluation.gates for issue in gate.issues):
