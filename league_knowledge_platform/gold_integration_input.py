@@ -5,11 +5,38 @@ from hashlib import sha256
 import json
 
 from .gold_inspection import open_gold_inspection
+from .gold_inspection_models import GoldInspectionRequestError
 from .gold_models import GoldSourceArtifactReference, GoldStatus
 from .source_knowledge import canonical_source_knowledge_path, load_source_knowledge
 from .source_audit_input import read_source_file
 from .source_audit_models import DEFAULT_SOURCE_AUDIT_CONFIG
 from .gold_integration_models import IntegrationOperationalError, require
+
+
+def projected_gold_references(*projections):
+    """Collect IDs and provenance from typed Gold fields, ignoring free text."""
+    identities = set()
+    provenance = set()
+
+    def visit(value):
+        if type(value) in (list, tuple):
+            for member in value:
+                visit(member)
+        elif type(value) is dict:
+            if "source_knowledge_artifact" in value:
+                provenance.add(json_value(value))
+            for name, member in value.items():
+                if name in ("knowledge_id", "target_knowledge_id", "merged_into", "document_id", "topic_id"):
+                    if member is not None:
+                        identities.add(member)
+                elif name in ("knowledge_ids", "historical_knowledge_ids", "target_knowledge_ids", "claim_knowledge_ids"):
+                    identities.update(member)
+                else:
+                    visit(member)
+
+    for projection in projections:
+        visit(projection)
+    return frozenset(identities), frozenset(provenance)
 
 
 def json_value(value):
@@ -100,8 +127,11 @@ class IntegrationInspection:
         if self.__calls >= self.__config.max_inspection_calls:
             raise IntegrationOperationalError("INSPECTION_LIMIT", phase="INSPECTION")
         self.__calls += 1
-        if "status" in arguments:
-            arguments = {**arguments, "status": GoldStatus(arguments["status"])}
+        if arguments.get("status") is not None:
+            try:
+                arguments = {**arguments, "status": GoldStatus(arguments["status"])}
+            except (ValueError, TypeError):
+                raise GoldInspectionRequestError("FILTER_STATUS") from None
         result = getattr(self.__session, name)(**arguments)
         encoded = json_value({"method": name, "arguments": arguments, "result": asdict(result)})
         size = len(encoded.encode("utf-8"))
