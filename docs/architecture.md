@@ -12,7 +12,7 @@ The architecture has three separate views. Source Acquisition integrates selecte
 | [Agentic Knowledge Curation](#knowledge-layers-and-curator) | Implemented Silver cleaning/segmentation, extraction, validated checkpoints, source audit, Gold storage/governance and read-only inspection; implemented semantic Gold preparation, candidate construction and durable commit/history |
 | [Experimental Evaluation](#planned-comparative-evaluation) | Planned controlled preparation comparison plus a separate practical live Web Search benchmark |
 
-Manually initiated sequential run orchestration is implemented through Bronze persistence and source registration, with its own SQLite progress database and immutable target snapshots. The integrated-source catalog remains separate. Run progress coordinates the existing Bronze API but remains separate from artifact storage. Curation and other future operational SQL responsibilities remain planned; the platform is not yet a completed acquisition/curation system.
+Manually initiated sequential run orchestration is implemented through Bronze persistence and source registration, with its own SQLite progress database and immutable target snapshots. The integrated-source catalog remains separate. Run progress coordinates the existing Bronze API but remains separate from artifact storage. Curation through durable Gold is available through explicit operations beyond the acquisition run. Broader operational SQL responsibilities remain planned.
 
 ## Source Acquisition
 
@@ -287,7 +287,7 @@ flowchart TD
 
 | Workstream | Priority and scope |
 | --- | --- |
-| A — Core Knowledge System | Core components now include explicit Source → canonical Gold integration, durable history and Change Events. End-to-end Core Pipeline acceptance remains pending; this component delivery does not declare the complete system accepted. |
+| A — Core Knowledge System | Technical implementation through durable canonical Gold and append-only integration history. Final end-to-end acceptance is pending. |
 | B — Retrieval / Answering | Later: build the serving/query-time path over canonical Gold. Retrieval remains derived/rebuildable and is not implemented. |
 | C — Baselines | Later: Fixed-Size RAG, Generic Agentic Preparation and Live Web Search Agent, with the purpose-built system as the system under test. No baseline system is implemented. |
 | D — Experimental Evaluation | Later: evaluation dataset → ground truth / required evidence → experiment configuration freeze → runs → metrics → analysis. No comparative results exist. |
