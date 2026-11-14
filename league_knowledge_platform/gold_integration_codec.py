@@ -7,6 +7,7 @@ from .gold_governance import decode_gold_operation, gold_operation_document
 from .gold_governance_models import GOVERNANCE_CONTRACT_VERSION, OPERATION_SCHEMA_VERSION
 from .gold_document_models import GoldDocumentLayout, GoldTopic, GoldUnitPlacement, GoldEntity
 from .gold_models import GoldDocumentVersion
+from .gold_integration_input import json_value
 from .gold_integration_models import (IntegrationPlan, IntegrationIssue, IntegrationGateEvaluation,
     IntegrationEvaluation, IntegrationGate, IntegrationVerdict, require)
 
@@ -28,7 +29,7 @@ def plan_document(plan):
             "proposed_layout": [asdict(d) for d in plan.proposed_layout]}
 
 
-def proposal_to_plan(document, request, metadata):
+def proposal_to_plan(document, request, metadata, observed_ids, observed_topics, observed_provenance):
     """Source/base bindings and new identities come exclusively from application state.
 
     Only identity positions are resolved; literal content/rationale is never rewritten.
@@ -36,18 +37,37 @@ def proposal_to_plan(document, request, metadata):
     """
     keys(document, "operations layouts")
     inspection, source = request.inspection, request.source
+    source_reference, source_item_ids = asdict(source.reference), source.item_ids
+    declarations = {}
+
+    def declare(alias, kind):
+        declarations[kind, alias] = inspection.allocate(kind, alias)
 
     def identity(value, kind):
         require(isinstance(value, str), "IDENTITY")
         if value.startswith("new-"):
-            return inspection.allocate(kind, value)
+            require((kind, value) in declarations, "UNDECLARED_ALIAS")
+            return declarations[kind, value]
+        require(value in observed_ids, "UNOBSERVED_GOLD_ID")
         return value
+
+    def topic_identity(value, document_id):
+        resolved = identity(value, "topic")
+        if value.startswith("new-"):
+            require((document_id, resolved) in declared_topics, "UNDECLARED_TOPIC")
+        else:
+            require((document_id, resolved) in observed_topics, "UNOBSERVED_GOLD_TOPIC")
+        return resolved
 
     def resolve(value):
         if type(value) is list:
             return [resolve(v) for v in value]
         if type(value) is not dict:
             return value
+        if "source_knowledge_artifact" in value:
+            supplied = (value["source_knowledge_artifact"] == source_reference
+                        and value.get("source_item_id") in source_item_ids)
+            require(supplied or json_value(value) in observed_provenance, "UNOBSERVED_PROVENANCE")
         result = {}
         for name, member in value.items():
             if name in ("knowledge_id", "target_knowledge_id", "source_knowledge_id", "merged_into") and member is not None:
@@ -57,42 +77,48 @@ def proposal_to_plan(document, request, metadata):
             elif name == "document_id":
                 result[name] = identity(member, "document")
             elif name == "topic_id":
-                result[name] = identity(member, "topic")
+                result[name] = topic_identity(member, identity(value["document_id"], "document"))
             else:
                 result[name] = resolve(member)
         return result
 
     # Collect new identities only from declarations, never arbitrary invented stable IDs.
     for operation in array(document["operations"]):
-        keys(operation, "operation_id kind source_item_ids rationale payload")
+        keys(operation, "kind source_item_ids rationale payload")
         payload = operation["payload"]
         if operation["kind"] == "CREATE":
-            require(payload["new_unit"]["unit"]["knowledge_id"].startswith("new-unit-"), "NEW_ALIAS")
-            identity(payload["new_unit"]["unit"]["knowledge_id"], "unit")
+            declare(payload["new_unit"]["unit"]["knowledge_id"], "unit")
         elif operation["kind"] == "FLAG_CONFLICT":
             for claim in array(payload["new_claims"]):
-                require(claim["unit"]["knowledge_id"].startswith("new-unit-"), "NEW_ALIAS")
-                identity(claim["unit"]["knowledge_id"], "unit")
-    operations = []
-    for draft in document["operations"]:
-        contributors = array(draft["source_item_ids"])
-        require(len(contributors) == len(set(contributors)) and set(contributors) <= source.item_ids, "SOURCE_ITEMS")
-        value = {k: v for k, v in draft.items() if k != "source_item_ids"}
-        value = resolve(value)
-        value.update(operation_schema_version=OPERATION_SCHEMA_VERSION, governance_contract_version=GOVERNANCE_CONTRACT_VERSION,
-            source_refs=[{"source_knowledge_artifact": asdict(source.reference), "source_item_id": i} for i in contributors])
-        operations.append(decode_gold_operation(json.dumps(value, ensure_ascii=False).encode("utf-8")))
-    layouts, existing = [], {d.document_id for d in inspection.snapshot.documents}
+                declare(claim["unit"]["knowledge_id"], "unit")
+    declared_topics = set()
     for layout in array(document["layouts"]):
         keys(layout, "document_id title entity domain_key topics")
+        if layout["document_id"].startswith("new-"):
+            declare(layout["document_id"], "document")
         doc_id = identity(layout["document_id"], "document")
-        require(doc_id in existing or layout["document_id"].startswith("new-document-"), "NEW_ALIAS")
-        topics = []
         for topic in array(layout["topics"]):
             keys(topic, "topic_id title position units")
-            topic_id = identity(topic["topic_id"], "topic")
-            old_topic_ids = {t.topic_id for d in inspection.snapshot.documents if d.document_id == doc_id for t in d.topics}
-            require(topic_id in old_topic_ids or topic["topic_id"].startswith("new-topic-"), "NEW_ALIAS")
+            if topic["topic_id"].startswith("new-"):
+                declare(topic["topic_id"], "topic")
+                declared_topics.add((doc_id, identity(topic["topic_id"], "topic")))
+
+    operations = []
+    for index, draft in enumerate(document["operations"], 1):
+        contributors = array(draft["source_item_ids"])
+        require(len(contributors) == len(set(contributors)) and set(contributors) <= source_item_ids, "SOURCE_ITEMS")
+        value = {k: v for k, v in draft.items() if k != "source_item_ids"}
+        value = resolve(value)
+        value.update(operation_id=f"op-{index}", operation_schema_version=OPERATION_SCHEMA_VERSION,
+            governance_contract_version=GOVERNANCE_CONTRACT_VERSION,
+            source_refs=[{"source_knowledge_artifact": source_reference, "source_item_id": i} for i in contributors])
+        operations.append(decode_gold_operation(json.dumps(value, ensure_ascii=False).encode("utf-8")))
+    layouts = []
+    for layout in document["layouts"]:
+        doc_id = identity(layout["document_id"], "document")
+        topics = []
+        for topic in layout["topics"]:
+            topic_id = topic_identity(topic["topic_id"], doc_id)
             placements = []
             for p in array(topic["units"]):
                 keys(p, "knowledge_id position")

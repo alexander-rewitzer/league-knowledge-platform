@@ -8,9 +8,11 @@ import os
 from . import _deepseek_json as transport, defaults
 from .gold_governance import GOLD_GOVERNANCE_RULES
 from . import gold_governance_models as governance
+from .gold_inspection import _request_identity
+from .gold_inspection_models import GoldInspectionNotFoundError, GoldInspectionRequestError
 from .gold_integration_codec import (array, keys, plan_document, proposal_to_plan,
                                      evaluation_document, decode_integration_evaluation)
-from .gold_integration_input import json_value
+from .gold_integration_input import json_value, projected_gold_references
 from .gold_integration_models import (IntegrationAgentRequest, IntegrationValidatorRequest,
                                       IntegrationOperationalError, require)
 from .gold_integration_prompts import (
@@ -42,18 +44,32 @@ def _rules():
     return [asdict(rule) for rule in GOLD_GOVERNANCE_RULES]
 
 
+_QUERY_ID_PREFIXES = {"document_id": "gdoc", "topic_id": "topic", "knowledge_id": "gku"}
+
+
 def _contracts():
     names = ("GoldNoChangePayload", "GoldCreatePayload", "GoldEnrichPayload", "GoldRewritePayload",
              "GoldMergePayload", "GoldLinkPayload", "GoldFlagConflictPayload", "GoldNewUnitIntent",
              "GoldPlacementIntent", "GoldProvenanceAddition", "GoldRelationIntent")
+    filters = {name: "null or routing key matching [a-z0-9][a-z0-9_-]{0,79}"
+               for name in ("entity_namespace", "entity_key", "domain_key")}
+    filters["document_id"] = "null or observed document_id"
     return {**{n: {f.name: str(f.type) for f in fields(getattr(governance, n))} for n in names},
             "GoldKnowledgeUnit": "knowledge_id,content,provenance[],status ACTIVE|MERGED,relations[],merged_into null|ID",
             "GoldProvenance": "source_knowledge_artifact {source_type,source_id,relative_path,sha256,schema_version,audit_contract_version},source_item_id",
             "GoldRelation": "kind related_to|contradicts,target_knowledge_id",
-            "queries": {"search_gold": "query,limit<=100,offset,entity_namespace,entity_key,domain_key,document_id,topic_id,status",
-                        "get_gold_unit": "knowledge_id", "get_gold_document": "document_id",
-                        "get_gold_topic": "document_id,topic_id", "get_gold_provenance": "knowledge_id",
-                        "inspect_gold_structure": "entity_namespace,entity_key,domain_key,document_id"}}
+            "observed_id_formats": {name: prefix + "-[0-9a-f]{32}" for name, prefix in _QUERY_ID_PREFIXES.items()},
+            "queries": {
+                "search_gold": {"required": {"query": "string"}, "optional": {
+                    **filters, "topic_id": "null or observed topic_id; with document_id use the observed pair",
+                    "status": "null, ACTIVE or MERGED",
+                    "limit": f"integer 1 through {defaults.GOLD_INSPECTION_MAX_PAGE_LIMIT}", "offset": "integer >= 0"}},
+                "get_gold_unit": {"required": {"knowledge_id": "observed knowledge_id"}},
+                "get_gold_document": {"required": {"document_id": "observed document_id"}},
+                "get_gold_topic": {"required": {"document_id": "observed document_id",
+                    "topic_id": "observed topic_id from the same document_id"}},
+                "get_gold_provenance": {"required": {"knowledge_id": "observed knowledge_id"}},
+                "inspect_gold_structure": {"required": {}, "optional": filters}}}
 
 
 class _IntegrationJSONAdapter:
@@ -121,31 +137,61 @@ class _IntegrationJSONAdapter:
 
 
 class DeepSeekIntegrationAgent(_IntegrationJSONAdapter):
+    def _inspect(self, inspection, method, arguments, query_contracts, observed_ids, observed_topics):
+        require(isinstance(method, str) and method in query_contracts, "INSPECTION_METHOD")
+        required = set(query_contracts[method]["required"])
+        optional = set(query_contracts[method].get("optional", ()))
+        if not required <= arguments.keys() <= required | optional:
+            raise self._error("INSPECTION_INVALID_ARGUMENTS")
+        try:
+            for name, identity in arguments.items():
+                if name not in _QUERY_ID_PREFIXES or (identity is None and name in optional):
+                    continue
+                _request_identity(identity, _QUERY_ID_PREFIXES[name])
+                if identity not in observed_ids:
+                    raise self._error("INSPECTION_UNKNOWN_ID")
+            document_id, topic_id = arguments.get("document_id"), arguments.get("topic_id")
+            if document_id is not None and topic_id is not None and (document_id, topic_id) not in observed_topics:
+                raise self._error("INSPECTION_UNKNOWN_ID")
+            inspection.query(method, **arguments)
+        except GoldInspectionRequestError as error:
+            code = "INSPECTION_INVALID_IDENTITY" if error.code == "IDENTITY" else "INSPECTION_INVALID_ARGUMENTS"
+            raise self._error(code) from None
+        except GoldInspectionNotFoundError:
+            raise self._error("INSPECTION_UNKNOWN_ID") from None
+
     def propose(self, request: IntegrationAgentRequest):
         require(type(request) is IntegrationAgentRequest and bool(request.source.item_ids), "AGENT_REQUEST")
         require((request.previous_plan is None) == (request.feedback is None), "REFINEMENT")
         if request.feedback is not None:
             require(request.feedback.decision == "REJECT", "REFINEMENT")
+        contracts = _contracts()
         for _ in range(request.config.max_agent_exchanges):
+            observations = [json.loads(s) for s in request.inspection.observations]
             payload = {"source": request.source.semantic_document(), "base_reference": asdict(request.inspection.reference),
-                       "governance": _rules(), "contracts": _contracts(),
+                       "governance": _rules(), "contracts": contracts,
+                       "gold_has_documents": bool(request.inspection.snapshot.documents),
                        "application_declarations": request.inspection.declarations,
-                       "inspected_gold": [json.loads(s) for s in request.inspection.observations]}
+                       "inspected_gold": observations}
             if request.previous_plan is not None:
                 payload["refinement"] = {"previous_complete_plan": plan_document(request.previous_plan),
                                          "feedback": evaluation_document(request.feedback)}
             document, metadata = self._complete(payload, INTEGRATION_AGENT_SYSTEM_PROMPT,
                 INTEGRATION_AGENT_PROMPT_VERSION, request.config.agent_output_limit)
             try:
+                observed_ids, observed_topics, observed_provenance = projected_gold_references(
+                    *(observation["result"] for observation in observations))
                 if type(document) is dict and set(document) == {"proposal"}:
-                    return proposal_to_plan(document["proposal"], request, metadata)
+                    return proposal_to_plan(document["proposal"], request, metadata,
+                                            observed_ids, observed_topics, observed_provenance)
                 keys(document, "queries")
                 queries = array(document["queries"])
                 require(bool(queries), "INSPECTION_QUERY")
                 for query in queries:
                     keys(query, "method arguments")
                     require(type(query["arguments"]) is dict, "INSPECTION_QUERY")
-                    request.inspection.query(query["method"], **query["arguments"])
+                    self._inspect(request.inspection, query["method"], query["arguments"], contracts["queries"],
+                                  observed_ids, observed_topics)
             except IntegrationOperationalError:
                 raise
             except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
@@ -161,6 +207,12 @@ class DeepSeekIntegrationValidator(_IntegrationJSONAdapter):
         document, metadata = self._complete(payload, INTEGRATION_VALIDATOR_SYSTEM_PROMPT,
             INTEGRATION_VALIDATOR_PROMPT_VERSION, request.output_limit)
         try:
-            return decode_integration_evaluation(document, metadata)
+            evaluation = decode_integration_evaluation(document, metadata)
         except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
             raise self._error("INVALID_OUTPUT") from None
+        supplied_ids, _, _ = projected_gold_references(payload["complete_plan"],
+            *(observation["result"] for observation in payload["inspected_gold"]))
+        if any(not supplied_ids.issuperset(issue.affected_gold_ids)
+               for gate in evaluation.gates for issue in gate.issues):
+            raise self._error("FEEDBACK_REFERENCE")
+        return evaluation
